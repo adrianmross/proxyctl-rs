@@ -1,0 +1,7 @@
+# Default proxy hosts for SSH configuration
+# Add your Oracle internal hosts here
+
+# Example hosts
+host1.oracle.com
+host2.oracle.com
+internal.oraclecorp.com

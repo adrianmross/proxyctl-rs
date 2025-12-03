@@ -1,0 +1,23 @@
+name: Publish to crates.io
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+
+    - name: Login into crates.io
+      run: cargo login ${{ secrets.CRATES_IO }}
+
+    - name: Publish to crates.io
+      run: cargo publish

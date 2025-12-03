@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            name: proxyctl-rs-linux-x86_64
+            asset_name: proxyctl-rs-linux-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: proxyctl-rs-macos-aarch64
+            asset_name: proxyctl-rs-macos-aarch64
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+
+    - name: Build release binary
+      run: cargo build --release --target ${{ matrix.target }}
+
+    - name: Package binary
+      shell: bash
+      run: |
+        cd target/${{ matrix.target }}/release
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          cp proxyctl-rs.exe ${{ matrix.name }}
+        else
+          cp proxyctl-rs ${{ matrix.name }}
+        fi
+        strip ${{ matrix.name }} || true
+
+    - name: Upload binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.asset_name }}
+        path: target/${{ matrix.target }}/release/${{ matrix.name }}
+
+  publish:
+    name: Create Release
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Create release archives
+      shell: bash
+      run: |
+        cd artifacts
+        for dir in */; do
+          if [ -d "$dir" ]; then
+            tar -czf "${dir%/}.tar.gz" -C "$dir" .
+          fi
+        done
+
+    - name: Create GitHub release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: artifacts/*.tar.gz
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

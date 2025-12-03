@@ -1,0 +1,28 @@
+[package]
+name = "proxyctl-rs"
+version = "0.2.0"
+edition = "2021"
+authors = ["Adrian Ross"]
+description = "A CLI tool for managing proxy configurations"
+license = "MIT"
+keywords = ["proxy", "vpn", "cli", "network"]
+categories = ["command-line-utilities"]
+repository = "https://github.com/adrianmross/proxyctl-rs"
+homepage = "https://github.com/adrianmross/proxyctl-rs"
+
+[dependencies]
+clap = { version = "4.0", features = ["derive"] }
+tokio = { version = "1.0", features = ["full"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+dirs = "5.0"
+regex = "1.0"
+config = "0.14"
+toml = "0.8"
+dotenvy = "0.15"
+
+[dev-dependencies]
+tempfile = "3.0"
