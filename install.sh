@@ -18,7 +18,7 @@ fi
 ARCH=$(uname -m)
 if [[ "$ARCH" == "x86_64" ]]; then
     ARCH="x86_64"
-elif [[ "$ARCH" == "aarch64" ]]; then
+elif [[ "$ARCH" == "aarch64" ]] || [[ "$ARCH" == "arm64" ]]; then
     ARCH="aarch64"
 else
     echo "Unsupported architecture: $ARCH"
