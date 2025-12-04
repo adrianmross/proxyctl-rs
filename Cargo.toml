@@ -1,6 +1,6 @@
 [package]
 name = "proxyctl-rs"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["Adrian Ross"]
 description = "A CLI tool for managing proxy configurations"
