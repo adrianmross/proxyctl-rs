@@ -79,11 +79,16 @@ fn test_combined_no_proxy_logic() {
 #[test]
 fn test_config_serialization() {
     // Test that config can be serialized and deserialized
-    let mut config = config::AppConfig::default();
-    config.no_proxy = Some(vec!["custom.domain".to_string()]);
-    config.enable_wpad_discovery = Some(false);
-    config.wpad_url = Some("http://custom-wpad.example.com/wpad.dat".to_string());
-    config.proxy_settings.enable_ftp_proxy = false;
+    let config = config::AppConfig {
+        no_proxy: Some(vec!["custom.domain".to_string()]),
+        enable_wpad_discovery: Some(false),
+        wpad_url: Some("http://custom-wpad.example.com/wpad.dat".to_string()),
+        proxy_settings: config::ProxySettings {
+            enable_ftp_proxy: false,
+            ..config::ProxySettings::default()
+        },
+        ..config::AppConfig::default()
+    };
 
     let toml = toml::to_string(&config).unwrap();
     assert!(toml.contains("custom.domain"));
@@ -153,7 +158,10 @@ fn test_wpad_url_override_from_config() {
     }
 
     let _home_guard = EnvGuard::set("HOME", fake_home.to_string_lossy());
-    let _xdg_guard = EnvGuard::set("XDG_CONFIG_HOME", fake_home.join(".config").to_string_lossy());
+    let _xdg_guard = EnvGuard::set(
+        "XDG_CONFIG_HOME",
+        fake_home.join(".config").to_string_lossy(),
+    );
     let _default_guard = EnvGuard::set("DEFAULT_WPAD_URL", "http://default.local/wpad.dat");
 
     let config_dir = config::get_config_dir().unwrap();

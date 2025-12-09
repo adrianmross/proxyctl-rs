@@ -2,9 +2,10 @@ use anyhow::{anyhow, Result};
 use config::{Config as ConfigLoader, File};
 use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
@@ -172,31 +173,79 @@ pub fn initialize_config() -> Result<()> {
 
 pub fn add_ssh_hosts(hosts_file: &str) -> Result<()> {
     let ssh_config_path = get_ssh_config_path()?;
-    let hosts_content = fs::read_to_string(hosts_file)?;
+    ensure_parent_dir(&ssh_config_path)?;
 
-    // Read existing config
-    let mut config = if ssh_config_path.exists() {
+    let hosts = read_hosts_from_file(hosts_file)?;
+    if hosts.is_empty() {
+        return Ok(());
+    }
+
+    create_backup(&ssh_config_path)?;
+
+    let proxy_host = get_proxy_host();
+    let config = if ssh_config_path.exists() {
         fs::read_to_string(&ssh_config_path)?
     } else {
         String::new()
     };
+    let had_trailing_newline = config.ends_with('\n');
+    let mut lines: Vec<String> = collect_lines(config);
 
-    // Add proxy settings for each host
-    for line in hosts_content.lines() {
-        let host = line.trim();
-        if !host.is_empty() && !host.starts_with('#') {
-            let proxy_config = format!(
-                "\nHost {}\n    ProxyCommand nc -x {} %h %p\n",
-                host,
-                get_proxy_host()
-            );
-            if !config.contains(&format!("Host {}", host)) {
-                config.push_str(&proxy_config);
+    let host_set: HashSet<String> = hosts.iter().map(|h| h.to_ascii_lowercase()).collect();
+
+    let expected_proxy = format!("ProxyCommand nc -x {proxy_host} %h %p");
+    let mut changed = false;
+    let mut index = 0;
+
+    while index < lines.len() {
+        if is_host_line(&lines[index]) {
+            let block_hosts = host_patterns_from_line(&lines[index]);
+            let matches_host = block_hosts
+                .iter()
+                .any(|pattern| host_set.contains(&pattern.to_ascii_lowercase()));
+
+            let block_end = find_block_end(&lines, index + 1);
+
+            if matches_host {
+                let proxy_line_idx = (index + 1..block_end).find(|&i| {
+                    lines[i]
+                        .trim_start()
+                        .to_ascii_lowercase()
+                        .starts_with("proxycommand ")
+                });
+
+                let indent = determine_block_indent(&lines, index + 1, block_end);
+                let formatted_proxy = format!("{indent}{expected_proxy}");
+
+                match proxy_line_idx {
+                    Some(i) => {
+                        if lines[i].trim() != expected_proxy {
+                            lines[i] = formatted_proxy;
+                            changed = true;
+                        }
+                    }
+                    None => {
+                        lines.insert(index + 1, formatted_proxy);
+                        changed = true;
+                    }
+                }
             }
+
+            index = find_block_end(&lines, index + 1);
+            continue;
         }
+
+        index += 1;
     }
 
-    fs::write(&ssh_config_path, config)?;
+    if changed {
+        let mut new_content = lines.join("\n");
+        if had_trailing_newline || new_content.is_empty() {
+            new_content.push('\n');
+        }
+        fs::write(&ssh_config_path, new_content)?;
+    }
+
     Ok(())
 }
 
@@ -206,26 +255,161 @@ pub fn remove_ssh_hosts() -> Result<()> {
         return Ok(());
     }
 
-    let content = fs::read_to_string(&ssh_config_path)?;
-    let mut in_proxy_block = false;
-    let mut lines_to_keep = Vec::new();
-
-    for line in content.lines() {
-        if line.starts_with("Host ") && line.contains("ProxyCommand") {
-            in_proxy_block = true;
-            continue;
-        }
-        if in_proxy_block && line.trim().is_empty() {
-            in_proxy_block = false;
-            continue;
-        }
-        if !in_proxy_block {
-            lines_to_keep.push(line.to_string());
-        }
+    let hosts_file = get_hosts_file_path()?;
+    let hosts = read_hosts_from_file(&hosts_file)?;
+    if hosts.is_empty() {
+        return Ok(());
     }
 
-    fs::write(&ssh_config_path, lines_to_keep.join("\n"))?;
+    create_backup(&ssh_config_path)?;
+
+    let proxy_host = get_proxy_host();
+    let expected_proxy = format!("ProxyCommand nc -x {proxy_host} %h %p");
+
+    let config = fs::read_to_string(&ssh_config_path)?;
+    let had_trailing_newline = config.ends_with('\n');
+    let mut lines: Vec<String> = collect_lines(config);
+
+    let host_set: HashSet<String> = hosts.iter().map(|h| h.to_ascii_lowercase()).collect();
+
+    let mut changed = false;
+    let mut index = 0;
+
+    while index < lines.len() {
+        if is_host_line(&lines[index]) {
+            let block_hosts = host_patterns_from_line(&lines[index]);
+            let matches_host = block_hosts
+                .iter()
+                .any(|pattern| host_set.contains(&pattern.to_ascii_lowercase()));
+
+            let mut block_end = find_block_end(&lines, index + 1);
+
+            if matches_host {
+                let mut removal_indices: Vec<usize> = Vec::new();
+                for (offset, line) in lines.iter().take(block_end).skip(index + 1).enumerate() {
+                    if line.trim() == expected_proxy {
+                        removal_indices.push(index + 1 + offset);
+                    }
+                }
+
+                if !removal_indices.is_empty() {
+                    for &idx in removal_indices.iter().rev() {
+                        lines.remove(idx);
+                        block_end -= 1;
+                    }
+                    // Clean up multiple blank lines after removal
+                    while index + 1 < block_end
+                        && lines[index + 1].trim().is_empty()
+                        && (index + 2 == block_end
+                            || lines[index + 2]
+                                .trim_start()
+                                .to_ascii_lowercase()
+                                .starts_with("host "))
+                    {
+                        lines.remove(index + 1);
+                        block_end -= 1;
+                    }
+                    changed = true;
+                }
+            }
+
+            index = block_end;
+            continue;
+        }
+
+        index += 1;
+    }
+
+    if changed {
+        let mut new_content = lines.join("\n");
+        if had_trailing_newline && !new_content.ends_with('\n') {
+            new_content.push('\n');
+        }
+        fs::write(&ssh_config_path, new_content)?;
+    }
+
     Ok(())
+}
+
+fn ensure_parent_dir(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    Ok(())
+}
+
+fn read_hosts_from_file<P: AsRef<Path>>(hosts_file: P) -> Result<Vec<String>> {
+    let path = hosts_file.as_ref();
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(path)?;
+    let hosts = content
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(String::from)
+        .collect();
+    Ok(hosts)
+}
+
+fn create_backup(ssh_config_path: &Path) -> Result<()> {
+    if !ssh_config_path.exists() {
+        return Ok(());
+    }
+
+    if let Some(parent) = ssh_config_path.parent() {
+        fs::create_dir_all(parent)?;
+        let backup_path = parent.join("config.proxyctl-rs.bak");
+        if backup_path.exists() {
+            fs::remove_file(&backup_path)?;
+        }
+        fs::copy(ssh_config_path, backup_path)?;
+    }
+
+    Ok(())
+}
+
+fn is_host_line(line: &str) -> bool {
+    line.trim_start().to_ascii_lowercase().starts_with("host ")
+}
+
+fn host_patterns_from_line(line: &str) -> Vec<String> {
+    line.split_whitespace()
+        .skip(1)
+        .map(|s| s.to_string())
+        .collect()
+}
+
+fn find_block_end(lines: &[String], mut index: usize) -> usize {
+    while index < lines.len() {
+        if is_host_line(&lines[index]) {
+            break;
+        }
+        index += 1;
+    }
+    index
+}
+
+fn determine_block_indent(lines: &[String], start: usize, end: usize) -> String {
+    for line in lines.iter().take(end).skip(start) {
+        let trimmed = line.trim_end();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let indent_len = line.chars().take_while(|c| c.is_whitespace()).count();
+        return " ".repeat(indent_len);
+    }
+    "    ".to_string()
+}
+
+fn collect_lines(content: String) -> Vec<String> {
+    if content.is_empty() {
+        Vec::new()
+    } else {
+        content.lines().map(|line| line.to_string()).collect()
+    }
 }
 
 fn get_ssh_config_path() -> Result<std::path::PathBuf> {

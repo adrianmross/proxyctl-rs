@@ -88,19 +88,19 @@ pub fn get_status() -> Result<String> {
 
     if proxy_settings.enable_http_proxy {
         let http_proxy = env::var("http_proxy").unwrap_or_else(|_| "Not set".to_string());
-        status_lines.push(format!("HTTP Proxy: {}", http_proxy));
+        status_lines.push(format!("HTTP Proxy: {http_proxy}"));
     }
     if proxy_settings.enable_https_proxy {
         let https_proxy = env::var("https_proxy").unwrap_or_else(|_| "Not set".to_string());
-        status_lines.push(format!("HTTPS Proxy: {}", https_proxy));
+        status_lines.push(format!("HTTPS Proxy: {https_proxy}"));
     }
     if proxy_settings.enable_ftp_proxy {
         let ftp_proxy = env::var("ftp_proxy").unwrap_or_else(|_| "Not set".to_string());
-        status_lines.push(format!("FTP Proxy: {}", ftp_proxy));
+        status_lines.push(format!("FTP Proxy: {ftp_proxy}"));
     }
     if proxy_settings.enable_no_proxy {
         let no_proxy = env::var("no_proxy").unwrap_or_else(|_| "Not set".to_string());
-        status_lines.push(format!("No Proxy: {}", no_proxy));
+        status_lines.push(format!("No Proxy: {no_proxy}"));
     }
 
     Ok(status_lines.join("\n"))
@@ -124,16 +124,16 @@ fn persist_proxy_settings(proxy_url: &str, no_proxy: &str) -> Result<()> {
 
         // Add new settings based on config
         if proxy_settings.enable_http_proxy {
-            lines.push(format!("export http_proxy=\"{}\"", proxy_url));
+            lines.push(format!("export http_proxy=\"{proxy_url}\""));
         }
         if proxy_settings.enable_https_proxy {
-            lines.push(format!("export https_proxy=\"{}\"", proxy_url));
+            lines.push(format!("export https_proxy=\"{proxy_url}\""));
         }
         if proxy_settings.enable_ftp_proxy {
-            lines.push(format!("export ftp_proxy=\"{}\"", proxy_url));
+            lines.push(format!("export ftp_proxy=\"{proxy_url}\""));
         }
         if proxy_settings.enable_no_proxy && !no_proxy.is_empty() {
-            lines.push(format!("export no_proxy=\"{}\"", no_proxy));
+            lines.push(format!("export no_proxy=\"{no_proxy}\""));
         }
 
         fs::write(&profile, lines.join("\n"))?;

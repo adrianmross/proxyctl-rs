@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
         }
         Commands::Detect => {
             let proxy = detect::detect_best_proxy().await?;
-            println!("Best regional proxy: {}", proxy);
+            println!("Best regional proxy: {proxy}");
         }
         Commands::Ssh { action } => match action {
             SshCommands::Add { hosts_file } => {
@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
                         .unwrap_or_else(|_| "default_hosts.example.txt".to_string())
                 });
                 config::add_ssh_hosts(&file)?;
-                println!("SSH hosts added from {}", file);
+                println!("SSH hosts added from {file}");
             }
             SshCommands::Remove => {
                 config::remove_ssh_hosts()?;
@@ -93,7 +93,7 @@ async fn main() -> Result<()> {
         },
         Commands::Status => {
             let status = proxy::get_status()?;
-            println!("{}", status);
+            println!("{status}");
         }
     }
 
