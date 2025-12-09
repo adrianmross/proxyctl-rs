@@ -7,6 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
 pub struct ProxySettings {
     pub enable_http_proxy: bool,
     pub enable_https_proxy: bool,
@@ -32,6 +33,7 @@ pub struct AppConfig {
     pub no_proxy: Option<Vec<String>>,
     pub enable_wpad_discovery: Option<bool>,
     pub wpad_url: Option<String>,
+    #[serde(default)]
     pub proxy_settings: ProxySettings,
 }
 

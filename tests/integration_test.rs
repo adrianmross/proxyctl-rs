@@ -45,6 +45,23 @@ fn test_proxy_settings_struct() {
 }
 
 #[test]
+fn test_missing_proxy_settings_defaults() {
+    let config: config::AppConfig = toml::from_str(
+        r#"
+default_hosts_file = "hosts"
+
+[proxy_settings]
+"#,
+    )
+    .unwrap();
+
+    assert!(config.proxy_settings.enable_http_proxy);
+    assert!(config.proxy_settings.enable_https_proxy);
+    assert!(config.proxy_settings.enable_ftp_proxy);
+    assert!(config.proxy_settings.enable_no_proxy);
+}
+
+#[test]
 fn test_combined_no_proxy_logic() {
     // Test that default no_proxy combines with overrides correctly
     let default_no_proxy = defaults::default_no_proxy();
