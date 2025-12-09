@@ -1,7 +1,8 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use config::{Config as ConfigLoader, File};
 use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 
@@ -71,11 +72,25 @@ impl Default for AppConfig {
 }
 
 pub fn get_config_dir() -> Result<PathBuf> {
-    let config_dir =
-        dirs::config_dir().ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?;
-    let app_config_dir = config_dir.join("proxyctl-rs");
-    fs::create_dir_all(&app_config_dir)?;
-    Ok(app_config_dir)
+    if let Ok(xdg_config) = env::var("XDG_CONFIG_HOME") {
+        let path = PathBuf::from(xdg_config).join("proxyctl-rs");
+        fs::create_dir_all(&path)?;
+        return Ok(path);
+    }
+
+    if let Some(home_dir) = dirs::home_dir() {
+        let path = home_dir.join(".config").join("proxyctl-rs");
+        fs::create_dir_all(&path)?;
+        return Ok(path);
+    }
+
+    if let Some(config_dir) = dirs::config_dir() {
+        let path = config_dir.join("proxyctl-rs");
+        fs::create_dir_all(&path)?;
+        return Ok(path);
+    }
+
+    Err(anyhow!("Could not find config directory"))
 }
 
 pub fn load_config() -> Result<AppConfig> {
