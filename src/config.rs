@@ -1,5 +1,6 @@
 use anyhow::Result;
 use config::{Config as ConfigLoader, File};
+use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -26,10 +27,33 @@ impl Default for ProxySettings {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AppConfig {
     pub default_hosts_file: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_no_proxy")]
     pub no_proxy: Option<Vec<String>>,
     pub enable_wpad_discovery: Option<bool>,
     pub wpad_url: Option<String>,
     pub proxy_settings: ProxySettings,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum NoProxyInput {
+    List(Vec<String>),
+    String(String),
+}
+
+fn deserialize_no_proxy<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<NoProxyInput>::deserialize(deserializer)?;
+    Ok(value.map(|input| match input {
+        NoProxyInput::List(items) => items,
+        NoProxyInput::String(item) => item
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+    }))
 }
 
 use crate::defaults;

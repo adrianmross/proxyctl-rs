@@ -99,7 +99,7 @@ proxyctl-rs uses a configuration directory at `~/.config/proxyctl-rs/` (or equiv
 default_hosts_file = "hosts"
 
 # Custom no_proxy domains (overrides defaults completely)
-# Can be an array or space-delimited string
+# Can be an array or comma-delimited string
 no_proxy = ["example.com", "internal.domain"]
 
 # Enable/disable WPAD proxy discovery

@@ -75,6 +75,28 @@ fn test_config_serialization() {
     assert!(toml.contains("enable_ftp_proxy = false"));
 }
 
+#[test]
+fn test_no_proxy_parses_comma_string() {
+    let config: config::AppConfig = toml::from_str(
+        r#"
+default_hosts_file = "hosts"
+no_proxy = "example.com,foo.bar"
+
+[proxy_settings]
+enable_http_proxy = true
+enable_https_proxy = true
+enable_ftp_proxy = true
+enable_no_proxy = true
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        config.no_proxy,
+        Some(vec!["example.com".to_string(), "foo.bar".to_string()])
+    );
+}
+
 #[tokio::test]
 async fn test_detect_proxy_placeholder() {
     // Placeholder for proxy detection test
