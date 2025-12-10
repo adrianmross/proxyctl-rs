@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 - Core CLI entry lives in `src/main.rs` with shared logic split across focused modules: `config.rs` for persistent settings, `proxy.rs` for shell and environment toggles, `detect.rs` for regional auto-detection, and `defaults.rs` for bundled values.
 - Library-level helpers sit in `src/lib.rs`, enabling unit tests and future library reuse.
-- Integration coverage resides in `tests/integration_test.rs`; add more files under `tests/` for scenario-driven cases.
+- Integration coverage resides under `tests/`; add more files under `tests/` for scenario-driven cases.
 - Operational assets such as install scripts and release tooling are under `scripts/`, while `default_hosts.example.txt` provides a template for user-managed host lists.
 
 ## Build, Test, and Development Commands
