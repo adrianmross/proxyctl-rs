@@ -67,7 +67,6 @@ async fn main() -> Result<()> {
             println!("Proxy enabled");
         }
         Commands::Off => {
-            let resolved = proxy::resolve_proxy(None).await?;
             proxy::disable_proxy()?;
             config::remove_ssh_hosts()?;
             println!("Proxy disabled");
@@ -88,7 +87,6 @@ async fn main() -> Result<()> {
                 println!("SSH hosts added from {file}");
             }
             SshCommands::Remove => {
-                let resolved = proxy::resolve_proxy(None).await?;
                 config::remove_ssh_hosts()?;
                 println!("SSH hosts removed");
             }

@@ -6,7 +6,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use proxyctl_rs::config;
 
 fn proxy_line(proxy_host: &str) -> String {
-    format!("ProxyCommand nc -x {} %h %p", proxy_host)
+    format!("ProxyCommand nc -x {proxy_host} %h %p")
 }
 
 struct SshFixture {
@@ -35,9 +35,7 @@ impl SshFixture {
         let ssh_config_path = ssh_dir.join("config");
         fs::write(&ssh_config_path, ssh_config).expect("write ssh config");
 
-        let config_toml = format!(
-            "default_hosts_file = \"hosts.txt\"\n[proxy_settings]\nenable_http_proxy = true\nenable_https_proxy = true\nenable_ftp_proxy = true\nenable_no_proxy = true\n"
-        );
+        let config_toml = "default_hosts_file = \"hosts.txt\"\n[proxy_settings]\nenable_http_proxy = true\nenable_https_proxy = true\nenable_ftp_proxy = true\nenable_no_proxy = true\n".to_string();
         fs::write(config_dir.join("config.toml"), config_toml).expect("write config.toml");
 
         let hosts_path = config_dir.join("hosts.txt");
@@ -129,8 +127,7 @@ fn ssh_remove_removes_proxy_command_but_preserves_other_hosts() {
     let proxy_line_with_indent = format!("    {}\n", proxy_line(proxy_host));
 
     let initial = format!(
-        "Host host1.oracle.com\n    User alice\n{}\nHost host2.oracle.com\n    User bob\n{}\nHost other\n    User carol\n",
-        proxy_line_with_indent, proxy_line_with_indent
+        "Host host1.oracle.com\n    User alice\n{proxy_line_with_indent}\nHost host2.oracle.com\n    User bob\n{proxy_line_with_indent}\nHost other\n    User carol\n"
     );
 
     let fixture = SshFixture::new("host1.oracle.com\nhost2.oracle.com\n", &initial);

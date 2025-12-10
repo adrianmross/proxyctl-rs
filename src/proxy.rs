@@ -122,8 +122,16 @@ pub async fn resolve_proxy(proxy: Option<&str>) -> Result<ResolvedProxy> {
         return Ok(env_proxy);
     }
 
-    let detected = detect::detect_best_proxy().await?;
-    resolved_from_value(&detected)
+    let mut last_error: Option<anyhow::Error> = None;
+
+    for candidate in detect::detect_proxy_candidates().await? {
+        match resolved_from_value(&candidate) {
+            Ok(resolved) => return Ok(resolved),
+            Err(err) => last_error = Some(err),
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| anyhow!("No valid proxies discovered from WPAD response")))
 }
 
 fn persist_proxy_settings(proxy_url: &str, no_proxy: &str) -> Result<()> {
@@ -207,7 +215,7 @@ fn detect_shell_profile() -> Result<Option<String>> {
 
 fn resolved_from_value(value: &str) -> Result<ResolvedProxy> {
     let host = extract_proxy_host(value)
-        .ok_or_else(|| anyhow!("unable to determine proxy host from '{}'", value))?;
+        .ok_or_else(|| anyhow!("unable to determine proxy host from '{value}'"))?;
     Ok(ResolvedProxy {
         proxy_url: value.to_string(),
         proxy_host: host,
