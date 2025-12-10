@@ -3,7 +3,7 @@ use turso::Builder;
 use std::path::PathBuf;
 use crate::config;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct EnvState {
     pub http_proxy: Option<String>,
     pub https_proxy: Option<String>,
@@ -11,9 +11,8 @@ pub struct EnvState {
     pub no_proxy: Option<String>,
 }
 
-pub async fn init_db() -> Result<()> {
-    let db_path = get_db_path();
-    let db = Builder::new_local(&db_path).build().await?;
+pub async fn init_db(db_path: &str) -> Result<()> {
+    let db = Builder::new_local(db_path).build().await?;
     let conn = db.connect()?;
     conn.execute(
         r#"CREATE TABLE IF NOT EXISTS env_state (
@@ -25,10 +24,10 @@ pub async fn init_db() -> Result<()> {
     Ok(())
 }
 
-pub async fn save_env_state(state: &EnvState) -> Result<()> {
-    let db_path = get_db_path();
-    let db = Builder::new_local(&db_path).build().await?;
+pub async fn save_env_state(db_path: &str, state: &EnvState) -> Result<()> {
+    let db = Builder::new_local(db_path).build().await?;
     let conn = db.connect()?;
+    conn.execute("CREATE TABLE IF NOT EXISTS env_state (key TEXT PRIMARY KEY, value TEXT)", ()).await?;
     // Clear existing
     conn.execute("DELETE FROM env_state", ()).await?;
     // Insert new
@@ -47,10 +46,10 @@ pub async fn save_env_state(state: &EnvState) -> Result<()> {
     Ok(())
 }
 
-pub async fn load_env_state() -> Result<EnvState> {
-    let db_path = get_db_path();
-    let db = Builder::new_local(&db_path).build().await?;
+pub async fn load_env_state(db_path: &str) -> Result<EnvState> {
+    let db = Builder::new_local(db_path).build().await?;
     let conn = db.connect()?;
+    conn.execute("CREATE TABLE IF NOT EXISTS env_state (key TEXT PRIMARY KEY, value TEXT)", ()).await?;
     let mut stmt = conn.prepare("SELECT key, value FROM env_state").await?;
     let mut rows = stmt.query(()).await?;
     let mut state = EnvState::default();
@@ -68,7 +67,7 @@ pub async fn load_env_state() -> Result<EnvState> {
     Ok(state)
 }
 
-fn get_db_path() -> String {
+pub fn get_db_path() -> String {
     let config_dir = config::get_config_dir().unwrap_or_else(|_| PathBuf::from("."));
     config_dir.join("env_state.db").to_string_lossy().to_string()
 }

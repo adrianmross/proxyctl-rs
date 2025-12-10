@@ -54,18 +54,18 @@ impl ConfigDirGuard {
     }
 }
 
-#[test]
-fn test_proxy_status() {
+#[tokio::test]
+async fn test_proxy_status() {
     let _config_guard = ConfigDirGuard::new();
     // Test that status returns expected format
-    let status = proxy::get_status().unwrap();
+    let status = proxy::get_status().await.unwrap();
     assert!(status.contains("HTTP Proxy:"));
     assert!(status.contains("HTTPS Proxy:"));
     assert!(status.contains("No Proxy:"));
 }
 
-#[test]
-fn test_status_reflects_disable_without_vars() {
+#[tokio::test]
+async fn test_status_reflects_disable_without_vars() {
     let _config_guard = ConfigDirGuard::new();
     let _guard = EnvGuard::set([
         ("http_proxy", "http://proxy.example.com:8080"),
@@ -73,8 +73,8 @@ fn test_status_reflects_disable_without_vars() {
         ("no_proxy", "localhost"),
     ]);
 
-    proxy::disable_proxy().unwrap();
-    let status = proxy::get_status().unwrap();
+    proxy::disable_proxy().await.unwrap();
+    let status = proxy::get_status().await.unwrap();
 
     assert!(status.contains("HTTP Proxy: Not set"));
     assert!(status.contains("HTTPS Proxy: Not set"));

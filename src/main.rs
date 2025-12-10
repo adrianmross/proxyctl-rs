@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
 
     // Initialize config directory and files
     config::initialize_config()?;
-    db::init_db().await?;
+    db::init_db(&db::get_db_path()).await?;
 
     let cli = Cli::parse();
 

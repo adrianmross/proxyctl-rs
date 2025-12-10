@@ -201,11 +201,13 @@ fn clear_env_vars(keys: &[&str]) {
 }
 
 async fn save_env_state(state: &db::EnvState) -> Result<()> {
-    db::save_env_state(state).await
+    let db_path = db::get_db_path();
+    db::save_env_state(&db_path, state).await
 }
 
 async fn load_env_state() -> Result<db::EnvState> {
-    db::load_env_state().await
+    let db_path = db::get_db_path();
+    db::load_env_state(&db_path).await
 }
 
 fn detect_shell_profile() -> Result<Option<String>> {
