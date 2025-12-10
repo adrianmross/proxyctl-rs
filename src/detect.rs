@@ -2,6 +2,7 @@ use crate::config;
 use anyhow::Result;
 use regex::Regex;
 use reqwest::Client;
+use std::time::Duration;
 
 pub async fn detect_best_proxy() -> Result<String> {
     let (enabled, url) = config::get_wpad_config()?;
@@ -40,4 +41,25 @@ pub async fn detect_best_proxy() -> Result<String> {
             "Could not parse proxies from WPAD response"
         ))
     }
+}
+
+pub async fn fetch_proxy_with_timeout(url: &str, timeout: Duration) -> Result<String> {
+    let client = Client::builder().timeout(timeout).build()?;
+    let response = client
+        .get(url)
+        .header("noproxy", "*")
+        .send()
+        .await?
+        .text()
+        .await?;
+
+    let re = Regex::new(r#"proxies\s*=\s*"([^"]+)""#)?;
+    if let Some(caps) = re.captures(&response) {
+        let proxies_str = &caps[1];
+        let proxies: Vec<&str> = proxies_str.split(';').collect();
+        if let Some(first_proxy) = proxies.first() {
+            return Ok(first_proxy.trim().to_string());
+        }
+    }
+    Err(anyhow::anyhow!("No proxies found in WPAD response"))
 }

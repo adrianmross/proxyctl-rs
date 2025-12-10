@@ -108,7 +108,8 @@ fn ssh_add_adds_proxy_command_for_matching_hosts() {
         "Host host1.oracle.com\n    User alice\n\nHost unmatched\n    User bob\n",
     );
 
-    config::add_ssh_hosts(fixture.hosts_path().to_string_lossy().as_ref()).expect("add hosts");
+    config::add_ssh_hosts(fixture.hosts_path().to_string_lossy().as_ref(), proxy_host)
+        .expect("add hosts");
 
     let updated = fixture.read_config();
     assert!(updated.contains(&proxy_line(proxy_host)));
@@ -149,11 +150,13 @@ fn ssh_add_and_remove_are_idempotent() {
         "Host host1.oracle.com\n    User alice\n",
     );
 
-    config::add_ssh_hosts(fixture.hosts_path().to_string_lossy().as_ref()).expect("first add");
+    config::add_ssh_hosts(fixture.hosts_path().to_string_lossy().as_ref(), proxy_host)
+        .expect("first add");
     let first_config = fixture.read_config();
 
     // ensure repeated add doesn't duplicate proxy line
-    config::add_ssh_hosts(fixture.hosts_path().to_string_lossy().as_ref()).expect("second add");
+    config::add_ssh_hosts(fixture.hosts_path().to_string_lossy().as_ref(), proxy_host)
+        .expect("second add");
     let second_config = fixture.read_config();
     assert_eq!(first_config, second_config);
 
@@ -163,7 +166,8 @@ fn ssh_add_and_remove_are_idempotent() {
     assert!(!first_remove.contains(&proxy_line(proxy_host)));
 
     // re-add to confirm remove idempotence
-    config::add_ssh_hosts(fixture.hosts_path().to_string_lossy().as_ref()).expect("re-add");
+    config::add_ssh_hosts(fixture.hosts_path().to_string_lossy().as_ref(), proxy_host)
+        .expect("re-add");
     config::remove_ssh_hosts().expect("second remove");
     let second_remove = fixture.read_config();
     assert_eq!(first_remove, second_remove);

@@ -171,7 +171,7 @@ pub fn initialize_config() -> Result<()> {
     Ok(())
 }
 
-pub fn add_ssh_hosts(hosts_file: &str) -> Result<()> {
+pub fn add_ssh_hosts(hosts_file: &str, proxy_host: &str) -> Result<()> {
     let ssh_config_path = get_ssh_config_path()?;
     ensure_parent_dir(&ssh_config_path)?;
 
@@ -182,7 +182,6 @@ pub fn add_ssh_hosts(hosts_file: &str) -> Result<()> {
 
     create_backup(&ssh_config_path)?;
 
-    let proxy_host = get_proxy_host();
     let config = if ssh_config_path.exists() {
         fs::read_to_string(&ssh_config_path)?
     } else {
@@ -219,7 +218,7 @@ pub fn add_ssh_hosts(hosts_file: &str) -> Result<()> {
 
                 match proxy_line_idx {
                     Some(i) => {
-                        if lines[i].trim() != expected_proxy {
+                        if lines[i].trim() != expected_proxy || lines[i] != formatted_proxy {
                             lines[i] = formatted_proxy;
                             changed = true;
                         }
@@ -263,9 +262,6 @@ pub fn remove_ssh_hosts() -> Result<()> {
 
     create_backup(&ssh_config_path)?;
 
-    let proxy_host = get_proxy_host();
-    let expected_proxy = format!("ProxyCommand nc -x {proxy_host} %h %p");
-
     let config = fs::read_to_string(&ssh_config_path)?;
     let had_trailing_newline = config.ends_with('\n');
     let mut lines: Vec<String> = collect_lines(config);
@@ -287,7 +283,8 @@ pub fn remove_ssh_hosts() -> Result<()> {
             if matches_host {
                 let mut removal_indices: Vec<usize> = Vec::new();
                 for (offset, line) in lines.iter().take(block_end).skip(index + 1).enumerate() {
-                    if line.trim() == expected_proxy {
+                    let trimmed = line.trim_start().to_ascii_lowercase();
+                    if trimmed.starts_with("proxycommand ") && trimmed.contains("nc -x") {
                         removal_indices.push(index + 1 + offset);
                     }
                 }
@@ -398,8 +395,11 @@ fn determine_block_indent(lines: &[String], start: usize, end: usize) -> String 
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        let indent_len = line.chars().take_while(|c| c.is_whitespace()).count();
-        return " ".repeat(indent_len);
+        let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+        if indent.is_empty() {
+            continue;
+        }
+        return indent;
     }
     "    ".to_string()
 }
@@ -415,9 +415,4 @@ fn collect_lines(content: String) -> Vec<String> {
 fn get_ssh_config_path() -> Result<std::path::PathBuf> {
     let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?;
     Ok(home.join(".ssh").join("config"))
-}
-
-fn get_proxy_host() -> &'static str {
-    // This should be configurable, but for now use a default
-    "proxy.example.com:8080"
 }

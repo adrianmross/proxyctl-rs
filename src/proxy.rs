@@ -1,6 +1,7 @@
 use crate::config;
 use crate::defaults;
-use anyhow::Result;
+use crate::detect;
+use anyhow::{anyhow, Result};
 use std::env;
 use std::fs;
 
@@ -106,6 +107,25 @@ pub fn get_status() -> Result<String> {
     Ok(status_lines.join("\n"))
 }
 
+#[derive(Debug, Clone)]
+pub struct ResolvedProxy {
+    pub proxy_url: String,
+    pub proxy_host: String,
+}
+
+pub async fn resolve_proxy(proxy: Option<&str>) -> Result<ResolvedProxy> {
+    if let Some(value) = proxy {
+        return resolved_from_value(value);
+    }
+
+    if let Some(env_proxy) = proxy_from_env() {
+        return Ok(env_proxy);
+    }
+
+    let detected = detect::detect_best_proxy().await?;
+    resolved_from_value(&detected)
+}
+
 fn persist_proxy_settings(proxy_url: &str, no_proxy: &str) -> Result<()> {
     // Try to detect shell and update profile
     let shell_profile = detect_shell_profile()?;
@@ -183,4 +203,107 @@ fn detect_shell_profile() -> Result<Option<String>> {
     };
 
     Ok(Some(profile.to_string_lossy().to_string()))
+}
+
+fn resolved_from_value(value: &str) -> Result<ResolvedProxy> {
+    let host = extract_proxy_host(value)
+        .ok_or_else(|| anyhow!("unable to determine proxy host from '{}'", value))?;
+    Ok(ResolvedProxy {
+        proxy_url: value.to_string(),
+        proxy_host: host,
+    })
+}
+
+fn proxy_from_env() -> Option<ResolvedProxy> {
+    const VARS: [&str; 4] = ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"];
+    for key in VARS {
+        if let Ok(value) = env::var(key) {
+            if let Some(host) = extract_proxy_host(&value) {
+                return Some(ResolvedProxy {
+                    proxy_url: value,
+                    proxy_host: host,
+                });
+            }
+        }
+    }
+    None
+}
+
+fn extract_proxy_host(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let try_parse = |input: &str| -> Option<String> {
+        if let Ok(url) = reqwest::Url::parse(input) {
+            if let Some(host) = url.host_str() {
+                if let Some(port) = url.port().or_else(|| url.port_or_known_default()) {
+                    return Some(format!("{host}:{port}"));
+                }
+            }
+        }
+        None
+    };
+
+    if let Some(host) = try_parse(trimmed) {
+        return Some(host);
+    }
+
+    if let Some(host) = try_parse(&format!("http://{trimmed}")) {
+        return Some(host);
+    }
+
+    let mut candidate = trimmed;
+    if let Some(stripped) = candidate.strip_prefix("PROXY ") {
+        candidate = stripped.trim();
+    }
+    if let Some(stripped) = candidate.strip_prefix("proxy ") {
+        candidate = stripped.trim();
+    }
+
+    if let Some(token) = candidate.split_whitespace().next() {
+        candidate = token.trim();
+    }
+
+    candidate = candidate.trim_end_matches(';').trim().trim_end_matches('/');
+    if candidate.is_empty() {
+        return None;
+    }
+
+    if let Some(host) = try_parse(&format!("http://{candidate}")) {
+        return Some(host);
+    }
+
+    if let Some((host_part, port_part)) = split_host_port(candidate) {
+        return Some(format!("{host_part}:{port_part}"));
+    }
+
+    None
+}
+
+fn split_host_port(input: &str) -> Option<(String, String)> {
+    let input = input.trim();
+    if input.starts_with('[') {
+        if let Some(idx) = input.find("]: ") {
+            let host = &input[..idx + 1];
+            let port = &input[idx + 2..];
+            return Some((host.trim().to_string(), port.trim().to_string()));
+        }
+        if let Some(idx) = input.rfind("]:") {
+            let host = &input[..=idx];
+            let port = &input[idx + 2..];
+            return Some((host.trim().to_string(), port.trim().to_string()));
+        }
+    }
+
+    if let Some((host, port)) = input.rsplit_once(':') {
+        let host = host.trim();
+        let port = port.trim();
+        if !host.is_empty() && !port.is_empty() {
+            return Some((host.to_string(), port.to_string()));
+        }
+    }
+
+    None
 }

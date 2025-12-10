@@ -60,16 +60,16 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::On { proxy } => {
-            if let Some(proxy_url) = proxy {
-                proxy::set_proxy(&proxy_url)?;
-            } else {
-                let detected = detect::detect_best_proxy().await?;
-                proxy::set_proxy(&detected)?;
-            }
+            let resolved = proxy::resolve_proxy(proxy.as_deref()).await?;
+            proxy::set_proxy(&resolved.proxy_url)?;
+            let hosts_file = config::get_hosts_file_path()?.to_string_lossy().to_string();
+            config::add_ssh_hosts(&hosts_file, &resolved.proxy_host)?;
             println!("Proxy enabled");
         }
         Commands::Off => {
+            let resolved = proxy::resolve_proxy(None).await?;
             proxy::disable_proxy()?;
+            config::remove_ssh_hosts()?;
             println!("Proxy disabled");
         }
         Commands::Detect => {
@@ -78,15 +78,17 @@ async fn main() -> Result<()> {
         }
         Commands::Ssh { action } => match action {
             SshCommands::Add { hosts_file } => {
+                let resolved = proxy::resolve_proxy(None).await?;
                 let file = hosts_file.unwrap_or_else(|| {
                     config::get_hosts_file_path()
                         .map(|p| p.to_string_lossy().to_string())
                         .unwrap_or_else(|_| "default_hosts.example.txt".to_string())
                 });
-                config::add_ssh_hosts(&file)?;
+                config::add_ssh_hosts(&file, &resolved.proxy_host)?;
                 println!("SSH hosts added from {file}");
             }
             SshCommands::Remove => {
+                let resolved = proxy::resolve_proxy(None).await?;
                 config::remove_ssh_hosts()?;
                 println!("SSH hosts removed");
             }
