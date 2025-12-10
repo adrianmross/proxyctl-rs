@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod config;
+mod db;
 mod defaults;
 mod detect;
 mod proxy;
@@ -55,19 +56,20 @@ async fn main() -> Result<()> {
 
     // Initialize config directory and files
     config::initialize_config()?;
+    db::init_db().await?;
 
     let cli = Cli::parse();
 
     match cli.command {
         Commands::On { proxy } => {
             let resolved = proxy::resolve_proxy(proxy.as_deref()).await?;
-            proxy::set_proxy(&resolved.proxy_url)?;
+            proxy::set_proxy(&resolved.proxy_url).await?;
             let hosts_file = config::get_hosts_file_path()?.to_string_lossy().to_string();
             config::add_ssh_hosts(&hosts_file, &resolved.proxy_host)?;
             println!("Proxy enabled");
         }
         Commands::Off => {
-            proxy::disable_proxy()?;
+            proxy::disable_proxy().await?;
             config::remove_ssh_hosts()?;
             println!("Proxy disabled");
         }
@@ -92,7 +94,7 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Status => {
-            let status = proxy::get_status()?;
+            let status = proxy::get_status().await?;
             println!("{status}");
         }
     }

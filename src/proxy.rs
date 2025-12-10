@@ -1,13 +1,12 @@
 use crate::config;
+use crate::db;
 use crate::defaults;
 use crate::detect;
 use anyhow::{anyhow, Result};
-use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
-use std::path::PathBuf;
 
-pub fn set_proxy(proxy_url: &str) -> Result<()> {
+pub async fn set_proxy(proxy_url: &str) -> Result<()> {
     let proxy_settings = config::get_proxy_settings()?;
 
     let no_proxy_value = if proxy_settings.enable_no_proxy {
@@ -36,7 +35,7 @@ pub fn set_proxy(proxy_url: &str) -> Result<()> {
 
     persist_proxy_settings(proxy_url, no_proxy_value.as_deref())?;
 
-    let mut state = EnvState::default();
+        let mut state = db::EnvState::default();
     if proxy_settings.enable_http_proxy {
         state.http_proxy = Some(proxy_url.to_string());
     }
@@ -49,26 +48,26 @@ pub fn set_proxy(proxy_url: &str) -> Result<()> {
     if let Some(no_proxy_str) = no_proxy_value {
         state.no_proxy = Some(no_proxy_str);
     }
-    save_env_state(&state)?;
+    save_env_state(&state).await?;
 
     Ok(())
 }
 
-pub fn disable_proxy() -> Result<()> {
+pub async fn disable_proxy() -> Result<()> {
     clear_env_vars(&HTTP_PROXY_KEYS);
     clear_env_vars(&HTTPS_PROXY_KEYS);
     clear_env_vars(&FTP_PROXY_KEYS);
     clear_env_vars(&NO_PROXY_KEYS);
 
     remove_persisted_settings()?;
-    save_env_state(&EnvState::default())?;
+    save_env_state(&db::EnvState::default()).await?;
 
     Ok(())
 }
 
-pub fn get_status() -> Result<String> {
+pub async fn get_status() -> Result<String> {
     let proxy_settings = config::get_proxy_settings()?;
-    let state = load_env_state().unwrap_or_default();
+    let state = load_env_state().await.unwrap_or_else(|_| db::EnvState::default());
 
     let mut status_lines = Vec::new();
 
@@ -127,14 +126,6 @@ const HTTP_PROXY_KEYS: [&str; 2] = ["http_proxy", "HTTP_PROXY"];
 const HTTPS_PROXY_KEYS: [&str; 2] = ["https_proxy", "HTTPS_PROXY"];
 const FTP_PROXY_KEYS: [&str; 2] = ["ftp_proxy", "FTP_PROXY"];
 const NO_PROXY_KEYS: [&str; 2] = ["no_proxy", "NO_PROXY"];
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-struct EnvState {
-    http_proxy: Option<String>,
-    https_proxy: Option<String>,
-    ftp_proxy: Option<String>,
-    no_proxy: Option<String>,
-}
 
 fn persist_proxy_settings(proxy_url: &str, no_proxy: Option<&str>) -> Result<()> {
     // Try to detect shell and update profile
@@ -209,28 +200,12 @@ fn clear_env_vars(keys: &[&str]) {
     }
 }
 
-fn save_env_state(state: &EnvState) -> Result<()> {
-    let config_dir = config::get_config_dir()?;
-    let path = env_state_path(&config_dir);
-    let contents = serde_json::to_string(state)?;
-    fs::write(path, contents)?;
-    Ok(())
+async fn save_env_state(state: &db::EnvState) -> Result<()> {
+    db::save_env_state(state).await
 }
 
-fn load_env_state() -> Result<EnvState> {
-    let config_dir = config::get_config_dir()?;
-    let path = env_state_path(&config_dir);
-    if path.exists() {
-        let contents = fs::read_to_string(path)?;
-        let state: EnvState = serde_json::from_str(&contents)?;
-        Ok(state)
-    } else {
-        Ok(EnvState::default())
-    }
-}
-
-fn env_state_path(config_dir: &PathBuf) -> PathBuf {
-    config_dir.join("env_state.json")
+async fn load_env_state() -> Result<db::EnvState> {
+    db::load_env_state().await
 }
 
 fn detect_shell_profile() -> Result<Option<String>> {
