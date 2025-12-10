@@ -2,106 +2,95 @@ use crate::config;
 use crate::defaults;
 use crate::detect;
 use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
+use std::path::PathBuf;
 
 pub fn set_proxy(proxy_url: &str) -> Result<()> {
     let proxy_settings = config::get_proxy_settings()?;
 
-    // Set environment variables based on config
-    if proxy_settings.enable_http_proxy {
-        unsafe { env::set_var("http_proxy", proxy_url) };
-    }
-    if proxy_settings.enable_https_proxy {
-        unsafe { env::set_var("https_proxy", proxy_url) };
-    }
-    if proxy_settings.enable_ftp_proxy {
-        unsafe { env::set_var("ftp_proxy", proxy_url) };
-    }
-
-    // Set no_proxy
-    if proxy_settings.enable_no_proxy {
-        let no_proxy_str = if let Some(custom_no_proxy) = config::get_custom_no_proxy()? {
-            // Use custom no_proxy instead of defaults
+    let no_proxy_value = if proxy_settings.enable_no_proxy {
+        let value = if let Some(custom_no_proxy) = config::get_custom_no_proxy()? {
             custom_no_proxy.join(",")
         } else {
-            // Use defaults
             defaults::default_no_proxy()
         };
-        unsafe { env::set_var("no_proxy", &no_proxy_str) };
-
-        // Persist to shell profile
-        persist_proxy_settings(proxy_url, &no_proxy_str)?;
+        Some(value)
     } else {
-        // Still persist other settings if enabled
-        persist_proxy_settings(proxy_url, "")?;
-    }
+        None
+    };
 
-    // Set environment variables after persisting
     if proxy_settings.enable_http_proxy {
-        unsafe { env::set_var("http_proxy", proxy_url) };
+        set_env_vars(&HTTP_PROXY_KEYS, proxy_url);
     }
     if proxy_settings.enable_https_proxy {
-        unsafe { env::set_var("https_proxy", proxy_url) };
+        set_env_vars(&HTTPS_PROXY_KEYS, proxy_url);
     }
     if proxy_settings.enable_ftp_proxy {
-        unsafe { env::set_var("ftp_proxy", proxy_url) };
+        set_env_vars(&FTP_PROXY_KEYS, proxy_url);
     }
-    if proxy_settings.enable_no_proxy {
-        let no_proxy_str = if let Some(custom_no_proxy) = config::get_custom_no_proxy()? {
-            custom_no_proxy.join(",")
-        } else {
-            defaults::default_no_proxy()
-        };
-        unsafe { env::set_var("no_proxy", &no_proxy_str) };
+    if let Some(ref no_proxy_str) = no_proxy_value {
+        set_env_vars(&NO_PROXY_KEYS, no_proxy_str);
     }
+
+    persist_proxy_settings(proxy_url, no_proxy_value.as_deref())?;
+
+    let mut state = EnvState::default();
+    if proxy_settings.enable_http_proxy {
+        state.http_proxy = Some(proxy_url.to_string());
+    }
+    if proxy_settings.enable_https_proxy {
+        state.https_proxy = Some(proxy_url.to_string());
+    }
+    if proxy_settings.enable_ftp_proxy {
+        state.ftp_proxy = Some(proxy_url.to_string());
+    }
+    if let Some(no_proxy_str) = no_proxy_value {
+        state.no_proxy = Some(no_proxy_str);
+    }
+    save_env_state(&state)?;
 
     Ok(())
 }
 
 pub fn disable_proxy() -> Result<()> {
-    let proxy_settings = config::get_proxy_settings()?;
+    clear_env_vars(&HTTP_PROXY_KEYS);
+    clear_env_vars(&HTTPS_PROXY_KEYS);
+    clear_env_vars(&FTP_PROXY_KEYS);
+    clear_env_vars(&NO_PROXY_KEYS);
 
-    // Remove environment variables based on config
-    if proxy_settings.enable_http_proxy {
-        unsafe { env::remove_var("http_proxy") };
-    }
-    if proxy_settings.enable_https_proxy {
-        unsafe { env::remove_var("https_proxy") };
-    }
-    if proxy_settings.enable_ftp_proxy {
-        unsafe { env::remove_var("ftp_proxy") };
-    }
-    if proxy_settings.enable_no_proxy {
-        unsafe { env::remove_var("no_proxy") };
-    }
-
-    // Remove from shell profile
     remove_persisted_settings()?;
+    save_env_state(&EnvState::default())?;
 
     Ok(())
 }
 
 pub fn get_status() -> Result<String> {
     let proxy_settings = config::get_proxy_settings()?;
+    let state = load_env_state().unwrap_or_default();
 
     let mut status_lines = Vec::new();
 
     if proxy_settings.enable_http_proxy {
-        let http_proxy = env::var("http_proxy").unwrap_or_else(|_| "Not set".to_string());
-        status_lines.push(format!("HTTP Proxy: {http_proxy}"));
+        let env_value = env::var("http_proxy").ok();
+        let value = state.http_proxy.as_deref().or(env_value.as_deref());
+        status_lines.push(format!("HTTP Proxy: {}", value.unwrap_or("Not set")));
     }
     if proxy_settings.enable_https_proxy {
-        let https_proxy = env::var("https_proxy").unwrap_or_else(|_| "Not set".to_string());
-        status_lines.push(format!("HTTPS Proxy: {https_proxy}"));
+        let env_value = env::var("https_proxy").ok();
+        let value = state.https_proxy.as_deref().or(env_value.as_deref());
+        status_lines.push(format!("HTTPS Proxy: {}", value.unwrap_or("Not set")));
     }
     if proxy_settings.enable_ftp_proxy {
-        let ftp_proxy = env::var("ftp_proxy").unwrap_or_else(|_| "Not set".to_string());
-        status_lines.push(format!("FTP Proxy: {ftp_proxy}"));
+        let env_value = env::var("ftp_proxy").ok();
+        let value = state.ftp_proxy.as_deref().or(env_value.as_deref());
+        status_lines.push(format!("FTP Proxy: {}", value.unwrap_or("Not set")));
     }
     if proxy_settings.enable_no_proxy {
-        let no_proxy = env::var("no_proxy").unwrap_or_else(|_| "Not set".to_string());
-        status_lines.push(format!("No Proxy: {no_proxy}"));
+        let env_value = env::var("no_proxy").ok();
+        let value = state.no_proxy.as_deref().or(env_value.as_deref());
+        status_lines.push(format!("No Proxy: {}", value.unwrap_or("Not set")));
     }
 
     Ok(status_lines.join("\n"))
@@ -134,7 +123,20 @@ pub async fn resolve_proxy(proxy: Option<&str>) -> Result<ResolvedProxy> {
     Err(last_error.unwrap_or_else(|| anyhow!("No valid proxies discovered from WPAD response")))
 }
 
-fn persist_proxy_settings(proxy_url: &str, no_proxy: &str) -> Result<()> {
+const HTTP_PROXY_KEYS: [&str; 2] = ["http_proxy", "HTTP_PROXY"];
+const HTTPS_PROXY_KEYS: [&str; 2] = ["https_proxy", "HTTPS_PROXY"];
+const FTP_PROXY_KEYS: [&str; 2] = ["ftp_proxy", "FTP_PROXY"];
+const NO_PROXY_KEYS: [&str; 2] = ["no_proxy", "NO_PROXY"];
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+struct EnvState {
+    http_proxy: Option<String>,
+    https_proxy: Option<String>,
+    ftp_proxy: Option<String>,
+    no_proxy: Option<String>,
+}
+
+fn persist_proxy_settings(proxy_url: &str, no_proxy: Option<&str>) -> Result<()> {
     // Try to detect shell and update profile
     let shell_profile = detect_shell_profile()?;
     if let Some(profile) = shell_profile {
@@ -160,8 +162,12 @@ fn persist_proxy_settings(proxy_url: &str, no_proxy: &str) -> Result<()> {
         if proxy_settings.enable_ftp_proxy {
             lines.push(format!("export ftp_proxy=\"{proxy_url}\""));
         }
-        if proxy_settings.enable_no_proxy && !no_proxy.is_empty() {
-            lines.push(format!("export no_proxy=\"{no_proxy}\""));
+        if proxy_settings.enable_no_proxy {
+            if let Some(value) = no_proxy {
+                if !value.is_empty() {
+                    lines.push(format!("export no_proxy=\"{value}\""));
+                }
+            }
         }
 
         fs::write(&profile, lines.join("\n"))?;
@@ -189,6 +195,42 @@ fn remove_persisted_settings() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn set_env_vars(keys: &[&str], value: &str) {
+    for key in keys {
+        env::set_var(key, value);
+    }
+}
+
+fn clear_env_vars(keys: &[&str]) {
+    for key in keys {
+        env::remove_var(key);
+    }
+}
+
+fn save_env_state(state: &EnvState) -> Result<()> {
+    let config_dir = config::get_config_dir()?;
+    let path = env_state_path(&config_dir);
+    let contents = serde_json::to_string(state)?;
+    fs::write(path, contents)?;
+    Ok(())
+}
+
+fn load_env_state() -> Result<EnvState> {
+    let config_dir = config::get_config_dir()?;
+    let path = env_state_path(&config_dir);
+    if path.exists() {
+        let contents = fs::read_to_string(path)?;
+        let state: EnvState = serde_json::from_str(&contents)?;
+        Ok(state)
+    } else {
+        Ok(EnvState::default())
+    }
+}
+
+fn env_state_path(config_dir: &PathBuf) -> PathBuf {
+    config_dir.join("env_state.json")
 }
 
 fn detect_shell_profile() -> Result<Option<String>> {

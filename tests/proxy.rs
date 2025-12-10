@@ -1,12 +1,84 @@
 use proxyctl_rs::{config, defaults, proxy};
+use tempfile::TempDir;
+
+struct EnvGuard {
+    originals: Vec<(&'static str, Option<String>)>,
+}
+
+impl EnvGuard {
+    fn set<I, V>(vars: I) -> Self
+    where
+        I: IntoIterator<Item = (&'static str, V)>,
+        V: Into<String>,
+    {
+        let originals = vars
+            .into_iter()
+            .map(|(key, value)| {
+                let original = std::env::var(key).ok();
+                std::env::set_var(key, value.into());
+                (key, original)
+            })
+            .collect();
+        Self { originals }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        for (key, original) in self.originals.drain(..) {
+            if let Some(value) = original {
+                std::env::set_var(key, value);
+            } else {
+                std::env::remove_var(key);
+            }
+        }
+    }
+}
+
+struct ConfigDirGuard {
+    _dir: TempDir,
+    _env_guard: EnvGuard,
+}
+
+impl ConfigDirGuard {
+    fn new() -> Self {
+        let dir = tempfile::tempdir().expect("temp config dir");
+        let env_guard = EnvGuard::set([(
+            "XDG_CONFIG_HOME",
+            dir.path().to_string_lossy().into_owned(),
+        )]);
+        Self {
+            _dir: dir,
+            _env_guard: env_guard,
+        }
+    }
+}
 
 #[test]
 fn test_proxy_status() {
+    let _config_guard = ConfigDirGuard::new();
     // Test that status returns expected format
     let status = proxy::get_status().unwrap();
     assert!(status.contains("HTTP Proxy:"));
     assert!(status.contains("HTTPS Proxy:"));
     assert!(status.contains("No Proxy:"));
+}
+
+#[test]
+fn test_status_reflects_disable_without_vars() {
+    let _config_guard = ConfigDirGuard::new();
+    let _guard = EnvGuard::set([
+        ("http_proxy", "http://proxy.example.com:8080"),
+        ("https_proxy", "http://proxy.example.com:8080"),
+        ("no_proxy", "localhost"),
+    ]);
+
+    proxy::disable_proxy().unwrap();
+    let status = proxy::get_status().unwrap();
+
+    assert!(status.contains("HTTP Proxy: Not set"));
+    assert!(status.contains("HTTPS Proxy: Not set"));
+    assert!(status.contains("No Proxy: Not set"));
 }
 
 #[test]
