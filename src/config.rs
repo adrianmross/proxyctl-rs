@@ -192,7 +192,7 @@ pub fn add_ssh_hosts(hosts_file: &str, proxy_host: &str) -> Result<()> {
 
     let host_set: HashSet<String> = hosts.iter().map(|h| h.to_ascii_lowercase()).collect();
 
-    let expected_proxy = format!("ProxyCommand nc -x {proxy_host} %h %p");
+    let expected_proxy = format!("ProxyCommand /usr/bin/nc -X connect -x {proxy_host} %h %p");
     let mut changed = false;
     let mut index = 0;
 
@@ -284,7 +284,7 @@ pub fn remove_ssh_hosts() -> Result<()> {
                 let mut removal_indices: Vec<usize> = Vec::new();
                 for (offset, line) in lines.iter().take(block_end).skip(index + 1).enumerate() {
                     let trimmed = line.trim_start().to_ascii_lowercase();
-                    if trimmed.starts_with("proxycommand ") && trimmed.contains("nc -x") {
+                    if trimmed.starts_with("proxycommand ") && trimmed.contains("/usr/bin/nc -X") {
                         removal_indices.push(index + 1 + offset);
                     }
                 }
