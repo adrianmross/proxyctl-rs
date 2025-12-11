@@ -386,7 +386,14 @@ fn create_backup(ssh_config_path: &Path) -> Result<()> {
         if backup_path.exists() {
             fs::remove_file(&backup_path)?;
         }
-        fs::copy(ssh_config_path, backup_path)?;
+        match fs::copy(ssh_config_path, &backup_path) {
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+                let contents = fs::read(ssh_config_path)?;
+                fs::write(&backup_path, contents)?;
+            }
+            Err(err) => return Err(err.into()),
+        }
     }
 
     Ok(())
@@ -437,6 +444,10 @@ fn collect_lines(content: String) -> Vec<String> {
 }
 
 fn get_ssh_config_path() -> Result<std::path::PathBuf> {
+    if let Some(home) = env::var_os("HOME") {
+        return Ok(PathBuf::from(home).join(".ssh").join("config"));
+    }
+
     let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?;
     Ok(home.join(".ssh").join("config"))
 }

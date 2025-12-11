@@ -1,4 +1,5 @@
 use proxyctl_rs::{config, defaults, proxy};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use tempfile::TempDir;
 
 struct EnvGuard {
@@ -38,10 +39,12 @@ impl Drop for EnvGuard {
 struct ConfigDirGuard {
     _dir: TempDir,
     _env_guard: EnvGuard,
+    _lock: MutexGuard<'static, ()>,
 }
 
 impl ConfigDirGuard {
     fn new() -> Self {
+        let lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().expect("temp config dir");
         let config_dir = dir.path().join("config");
         let data_dir = dir.path().join("data");
@@ -59,8 +62,14 @@ impl ConfigDirGuard {
         Self {
             _dir: dir,
             _env_guard: env_guard,
+            _lock: lock,
         }
     }
+}
+
+fn env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
 }
 
 #[tokio::test]
