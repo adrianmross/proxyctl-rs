@@ -5,6 +5,7 @@ mod config;
 mod db;
 mod defaults;
 mod detect;
+mod doctor;
 mod proxy;
 
 #[derive(Parser)]
@@ -35,6 +36,8 @@ enum Commands {
     },
     /// Show current proxy status
     Status,
+    /// Run diagnostics for configuration and database
+    Doctor,
 }
 
 #[derive(Subcommand)]
@@ -96,6 +99,9 @@ async fn main() -> Result<()> {
         Commands::Status => {
             let status = proxy::get_status().await?;
             println!("{status}");
+        }
+        Commands::Doctor => {
+            doctor::run().await?;
         }
     }
 

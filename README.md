@@ -69,6 +69,9 @@ proxyctl-rs ssh remove
 
 # Show current proxy status
 proxyctl-rs status
+
+# Run diagnostic checks
+proxyctl-rs doctor
 ```
 
 ## Shell Integration
