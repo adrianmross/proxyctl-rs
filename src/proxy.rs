@@ -112,16 +112,37 @@ pub async fn resolve_proxy(proxy: Option<&str>) -> Result<ResolvedProxy> {
         return Ok(env_proxy);
     }
 
+    let default_proxy = config::get_default_proxy()?;
     let mut last_error: Option<anyhow::Error> = None;
 
-    for candidate in detect::detect_proxy_candidates().await? {
-        match resolved_from_value(&candidate) {
-            Ok(resolved) => return Ok(resolved),
-            Err(err) => last_error = Some(err),
+    match detect::detect_proxy_candidates().await {
+        Ok(candidates) => {
+            for candidate in candidates {
+                match resolved_from_value(&candidate) {
+                    Ok(resolved) => return Ok(resolved),
+                    Err(err) => last_error = Some(err),
+                }
+            }
+
+            if let Some(value) = default_proxy {
+                return resolved_from_value(&value).map_err(|err| {
+                    anyhow!("Failed to parse default proxy '{value}': {err}")
+                });
+            }
+
+            Err(last_error.unwrap_or_else(|| {
+                anyhow!("No valid proxies discovered from WPAD response")
+            }))
+        }
+        Err(err) => {
+            if let Some(value) = default_proxy {
+                return resolved_from_value(&value).map_err(|parse_err| {
+                    anyhow!("Failed to parse default proxy '{value}': {parse_err}")
+                });
+            }
+            Err(err)
         }
     }
-
-    Err(last_error.unwrap_or_else(|| anyhow!("No valid proxies discovered from WPAD response")))
 }
 
 const HTTP_PROXY_KEYS: [&str; 2] = ["http_proxy", "HTTP_PROXY"];

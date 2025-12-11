@@ -99,6 +99,20 @@ async fn test_status_reflects_disable_without_vars() {
     assert!(status.contains("No Proxy: Not set"));
 }
 
+#[tokio::test]
+async fn test_resolve_proxy_uses_default_when_wpad_disabled() {
+    let _config_guard = ConfigDirGuard::new();
+
+    let mut config = config::AppConfig::default();
+    config.enable_wpad_discovery = Some(false);
+    config.default_proxy = Some("http://fallback.example.com:8080".to_string());
+    config::save_config(&config).unwrap();
+
+    let resolved = proxy::resolve_proxy(None).await.unwrap();
+    assert_eq!(resolved.proxy_url, "http://fallback.example.com:8080");
+    assert_eq!(resolved.proxy_host, "fallback.example.com:8080");
+}
+
 #[test]
 fn test_default_constants() {
     // Test that default constants are properly defined

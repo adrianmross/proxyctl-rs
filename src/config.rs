@@ -33,6 +33,7 @@ pub struct AppConfig {
     pub default_hosts_file: Option<String>,
     #[serde(default, deserialize_with = "deserialize_no_proxy")]
     pub no_proxy: Option<Vec<String>>,
+    pub default_proxy: Option<String>,
     pub enable_wpad_discovery: Option<bool>,
     pub wpad_url: Option<String>,
     #[serde(default)]
@@ -68,6 +69,7 @@ impl Default for AppConfig {
         Self {
             default_hosts_file: Some("hosts".to_string()),
             no_proxy: None,
+            default_proxy: None,
             enable_wpad_discovery: Some(true),
             wpad_url: Some(defaults::default_wpad_url()),
             proxy_settings: ProxySettings::default(),
@@ -152,6 +154,20 @@ pub fn get_hosts_file_path() -> Result<PathBuf> {
 pub fn get_custom_no_proxy() -> Result<Option<Vec<String>>> {
     let config = load_config()?;
     Ok(config.no_proxy)
+}
+
+pub fn get_default_proxy() -> Result<Option<String>> {
+    let config = load_config()?;
+    Ok(config
+        .default_proxy
+        .and_then(|value| {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }))
 }
 
 pub fn get_proxy_settings() -> Result<ProxySettings> {
