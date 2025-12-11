@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
@@ -193,7 +194,13 @@ pub fn initialize_config() -> Result<()> {
     Ok(())
 }
 
+fn ssh_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 pub fn add_ssh_hosts(hosts_file: &str, proxy_host: &str) -> Result<()> {
+    let _lock = ssh_lock().lock().unwrap_or_else(|e| e.into_inner());
     let ssh_config_path = get_ssh_config_path()?;
     ensure_parent_dir(&ssh_config_path)?;
 
@@ -271,6 +278,7 @@ pub fn add_ssh_hosts(hosts_file: &str, proxy_host: &str) -> Result<()> {
 }
 
 pub fn remove_ssh_hosts() -> Result<()> {
+    let _lock = ssh_lock().lock().unwrap_or_else(|e| e.into_inner());
     let ssh_config_path = get_ssh_config_path()?;
     if !ssh_config_path.exists() {
         return Ok(());
@@ -383,17 +391,8 @@ fn create_backup(ssh_config_path: &Path) -> Result<()> {
     if let Some(parent) = ssh_config_path.parent() {
         fs::create_dir_all(parent)?;
         let backup_path = parent.join("config.proxyctl-rs.bak");
-        if backup_path.exists() {
-            fs::remove_file(&backup_path)?;
-        }
-        match fs::copy(ssh_config_path, &backup_path) {
-            Ok(_) => {}
-            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
-                let contents = fs::read(ssh_config_path)?;
-                fs::write(&backup_path, contents)?;
-            }
-            Err(err) => return Err(err.into()),
-        }
+        let contents = fs::read(ssh_config_path)?;
+        fs::write(&backup_path, contents)?;
     }
 
     Ok(())
