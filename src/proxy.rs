@@ -125,14 +125,12 @@ pub async fn resolve_proxy(proxy: Option<&str>) -> Result<ResolvedProxy> {
             }
 
             if let Some(value) = default_proxy {
-                return resolved_from_value(&value).map_err(|err| {
-                    anyhow!("Failed to parse default proxy '{value}': {err}")
-                });
+                return resolved_from_value(&value)
+                    .map_err(|err| anyhow!("Failed to parse default proxy '{value}': {err}"));
             }
 
-            Err(last_error.unwrap_or_else(|| {
-                anyhow!("No valid proxies discovered from WPAD response")
-            }))
+            Err(last_error
+                .unwrap_or_else(|| anyhow!("No valid proxies discovered from WPAD response")))
         }
         Err(err) => {
             if let Some(value) = default_proxy {

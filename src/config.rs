@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use config::{Config as ConfigLoader, File};
 use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -158,16 +158,14 @@ pub fn get_custom_no_proxy() -> Result<Option<Vec<String>>> {
 
 pub fn get_default_proxy() -> Result<Option<String>> {
     let config = load_config()?;
-    Ok(config
-        .default_proxy
-        .and_then(|value| {
-            let trimmed = value.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        }))
+    Ok(config.default_proxy.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    }))
 }
 
 pub fn get_proxy_settings() -> Result<ProxySettings> {
@@ -220,8 +218,8 @@ pub fn add_ssh_hosts(hosts_file: &str, proxy_host: &str) -> Result<()> {
     let ssh_config_path = get_ssh_config_path()?;
     ensure_parent_dir(&ssh_config_path)?;
 
-    let hosts = read_hosts_from_file(hosts_file)?;
-    if hosts.is_empty() {
+    let host_entries = read_hosts_from_file(hosts_file)?;
+    if host_entries.is_empty() {
         return Ok(());
     }
 
@@ -235,22 +233,42 @@ pub fn add_ssh_hosts(hosts_file: &str, proxy_host: &str) -> Result<()> {
     let had_trailing_newline = config.ends_with('\n');
     let mut lines: Vec<String> = collect_lines(config);
 
-    let host_set: HashSet<String> = hosts.iter().map(|h| h.to_ascii_lowercase()).collect();
-
-    let expected_proxy = format!("ProxyCommand /usr/bin/nc -X connect -x {proxy_host} %h %p");
+    let default_proxy_host = proxy_host.to_string();
+    let mut host_proxy_map: HashMap<String, String> = HashMap::new();
+    for entry in &host_entries {
+        let proxy_value = entry
+            .proxy
+            .clone()
+            .unwrap_or_else(|| default_proxy_host.clone());
+        host_proxy_map.insert(entry.pattern.to_ascii_lowercase(), proxy_value);
+    }
     let mut changed = false;
     let mut index = 0;
 
     while index < lines.len() {
         if is_host_line(&lines[index]) {
             let block_hosts = host_patterns_from_line(&lines[index]);
-            let matches_host = block_hosts
-                .iter()
-                .any(|pattern| host_set.contains(&pattern.to_ascii_lowercase()));
-
             let block_end = find_block_end(&lines, index + 1);
 
-            if matches_host {
+            let mut matched_proxies: Vec<&String> = Vec::new();
+            for pattern in &block_hosts {
+                let key = pattern.to_ascii_lowercase();
+                if let Some(proxy_value) = host_proxy_map.get(&key) {
+                    matched_proxies.push(proxy_value);
+                }
+            }
+
+            if !matched_proxies.is_empty() {
+                let first_proxy = matched_proxies[0];
+                if matched_proxies.iter().any(|value| *value != first_proxy) {
+                    return Err(anyhow!(
+                        "Host block '{}' matches multiple proxy assignments; split hosts with differing proxies",
+                        lines[index].trim()
+                    ));
+                }
+
+                let expected_proxy =
+                    format!("ProxyCommand /usr/bin/nc -X connect -x {first_proxy} %h %p");
                 let proxy_line_idx = (index + 1..block_end).find(|&i| {
                     lines[i]
                         .trim_start()
@@ -301,8 +319,8 @@ pub fn remove_ssh_hosts() -> Result<()> {
     }
 
     let hosts_file = get_hosts_file_path()?;
-    let hosts = read_hosts_from_file(&hosts_file)?;
-    if hosts.is_empty() {
+    let host_entries = read_hosts_from_file(&hosts_file)?;
+    if host_entries.is_empty() {
         return Ok(());
     }
 
@@ -312,7 +330,10 @@ pub fn remove_ssh_hosts() -> Result<()> {
     let had_trailing_newline = config.ends_with('\n');
     let mut lines: Vec<String> = collect_lines(config);
 
-    let host_set: HashSet<String> = hosts.iter().map(|h| h.to_ascii_lowercase()).collect();
+    let host_set: HashSet<String> = host_entries
+        .iter()
+        .map(|entry| entry.pattern.to_ascii_lowercase())
+        .collect();
 
     let mut changed = false;
     let mut index = 0;
@@ -383,20 +404,71 @@ fn ensure_parent_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn read_hosts_from_file<P: AsRef<Path>>(hosts_file: P) -> Result<Vec<String>> {
+#[derive(Debug, Clone)]
+struct HostEntry {
+    pattern: String,
+    proxy: Option<String>,
+}
+
+fn read_hosts_from_file<P: AsRef<Path>>(hosts_file: P) -> Result<Vec<HostEntry>> {
     let path = hosts_file.as_ref();
     if !path.exists() {
         return Ok(Vec::new());
     }
 
     let content = fs::read_to_string(path)?;
-    let hosts = content
-        .lines()
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(String::from)
-        .collect();
-    Ok(hosts)
+    let mut entries = Vec::new();
+
+    for (idx, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        let entry = parse_host_line(trimmed).map_err(|err| {
+            anyhow!(
+                "Failed to parse hosts file {}:{}: {}",
+                path.display(),
+                idx + 1,
+                err
+            )
+        })?;
+        entries.push(entry);
+    }
+
+    Ok(entries)
+}
+
+fn parse_host_line(line: &str) -> Result<HostEntry> {
+    let mut parts = line.split_whitespace();
+    let pattern = parts
+        .next()
+        .ok_or_else(|| anyhow!("missing host pattern"))?
+        .to_string();
+
+    let mut proxy: Option<String> = None;
+
+    for part in parts {
+        if part.starts_with('#') {
+            break;
+        }
+
+        let value = if let Some(rest) = part.strip_prefix("proxy=") {
+            rest
+        } else if proxy.is_none() {
+            part
+        } else {
+            return Err(anyhow!("unexpected token '{part}'"));
+        };
+
+        if value.is_empty() {
+            return Err(anyhow!("empty proxy value for host '{pattern}'"));
+        }
+
+        proxy = Some(value.to_string());
+    }
+
+    Ok(HostEntry { pattern, proxy })
 }
 
 fn create_backup(ssh_config_path: &Path) -> Result<()> {

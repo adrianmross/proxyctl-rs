@@ -128,6 +128,36 @@ fn ssh_add_adds_proxy_command_for_matching_hosts() {
 }
 
 #[test]
+fn ssh_add_supports_per_host_proxy_overrides() {
+    let default_proxy = "proxy.example.com:8080";
+    let override_proxy = "override.example.com:9090";
+    let fixture = SshFixture::new(
+        "host1.oracle.com\nhost2.oracle.com proxy=override.example.com:9090\n",
+        "Host host1.oracle.com\n    User alice\n\nHost host2.oracle.com\n    User bob\n",
+    );
+
+    config::add_ssh_hosts(
+        fixture.hosts_path().to_string_lossy().as_ref(),
+        default_proxy,
+    )
+    .expect("add hosts");
+
+    let updated = fixture.read_config();
+    assert!(updated.contains(&proxy_line(default_proxy)));
+    assert!(updated.contains(&proxy_line(override_proxy)));
+
+    let host1_index = updated.find("Host host1.oracle.com").expect("host1");
+    let host2_index = updated.find("Host host2.oracle.com").expect("host2");
+    assert!(host1_index < host2_index);
+
+    let host1_block = &updated[host1_index..host2_index];
+    assert!(host1_block.contains(&proxy_line(default_proxy)));
+
+    let host2_block = &updated[host2_index..];
+    assert!(host2_block.contains(&proxy_line(override_proxy)));
+}
+
+#[test]
 fn ssh_remove_removes_proxy_command_but_preserves_other_hosts() {
     let proxy_host = "proxy.example.com:8080";
     let proxy_line_with_indent = format!("    {}\n", proxy_line(proxy_host));
@@ -174,4 +204,22 @@ fn ssh_add_and_remove_are_idempotent() {
     config::remove_ssh_hosts().expect("second remove");
     let second_remove = fixture.read_config();
     assert_eq!(first_remove, second_remove);
+}
+
+#[test]
+fn ssh_add_errors_on_conflicting_host_block_overrides() {
+    let proxy_host = "proxy.example.com:8080";
+    let fixture = SshFixture::new(
+        "host1.oracle.com proxy=proxy-one:8080\nhost2.oracle.com proxy=proxy-two:8080\n",
+        "Host host1.oracle.com host2.oracle.com\n    User alice\n",
+    );
+
+    let result = config::add_ssh_hosts(fixture.hosts_path().to_string_lossy().as_ref(), proxy_host);
+
+    assert!(result.is_err());
+    let message = format!("{}", result.unwrap_err());
+    assert!(message.contains("matches multiple proxy assignments"));
+
+    let updated = fixture.read_config();
+    assert!(!updated.contains("ProxyCommand"));
 }
