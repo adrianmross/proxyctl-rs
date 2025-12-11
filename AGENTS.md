@@ -1,10 +1,11 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Core CLI entry lives in `src/main.rs` with shared logic split across focused modules: `config.rs` for persistent settings, `proxy.rs` for shell and environment toggles, `detect.rs` for regional auto-detection, and `defaults.rs` for bundled values.
-- Library-level helpers sit in `src/lib.rs`, enabling unit tests and future library reuse.
-- Integration coverage resides under `tests/`; add more files under `tests/` for scenario-driven cases.
-- Operational assets such as install scripts and release tooling are under `scripts/`, while `default_hosts.example.txt` provides a template for user-managed host lists.
+- Core CLI entry lives in `src/main.rs` with shared logic split across focused modules: `config.rs` for persistent settings and SSH host management, `proxy.rs` for shell and environment toggles, `detect.rs` for regional auto-detection, and `defaults.rs` for bundled values.
+- The new `src/db.rs` module encapsulates Turso-backed persistence for proxy environment state. Access it through the async helpers re-exported from `src/lib.rs`.
+- Library-level helpers sit in `src/lib.rs`, enabling unit tests and future library reuse. Re-export new modules here when adding functionality so tests can `use proxyctl_rs::<module>`.
+- Integration coverage resides under `tests/`; add more files under `tests/` for scenario-driven cases. Existing suites cover proxy toggling, database persistence, and SSH config flows—mirror their fixture patterns when extending behavior.
+- Operational assets such as install scripts and release tooling are under `scripts/`, while `default_hosts.example.txt` provides a template for user-managed host lists. Shell integration helpers live alongside release tooling in this directory.
 
 ## Build, Test, and Development Commands
 - `cargo build` compiles the workspace in debug mode; prefer `cargo build --release` before benchmarking or packaging.
@@ -20,8 +21,10 @@
 
 ## Testing Guidelines
 - Co-locate focused unit tests within each module under `#[cfg(test)]` blocks named `<module>_tests`.
-- Place cross-module scenarios in `tests/` and name files after the behavior under test (e.g., `ssh_workflow.rs`).
-- Ensure new functionality is exercised by both positive and failure cases; aim to cover CLI flags and environment-variable branches.
+- Place cross-module scenarios in `tests/` and name files after the behavior under test (e.g., `ssh_config.rs`, `db.rs`).
+- Async behavior (database helpers, proxy commands) should use `#[tokio::test]` with the multi-thread runtime when interacting with Turso.
+- SSH config tests rely on the `OnceLock`-guarded fixtures in `tests/ssh_config.rs`; reuse those helpers to avoid interfering with concurrent runs.
+- Ensure new functionality is exercised by both positive and failure cases; aim to cover CLI flags, environment-variable branches, and persistence edge cases.
 
 ## Commit & Pull Request Guidelines
 - Use concise, imperative conventional commit messages with category prefixes seen in history (`fix:`, `ci:`, `feat:`). Squash noisy WIP commits before pushing.
