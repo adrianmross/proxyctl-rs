@@ -38,6 +38,8 @@ enum Commands {
     Status,
     /// Run diagnostics for configuration and database
     Doctor,
+    /// List available configuration options and their values
+    Config,
 }
 
 #[derive(Subcommand)]
@@ -102,6 +104,17 @@ async fn main() -> Result<()> {
         }
         Commands::Doctor => {
             doctor::run().await?;
+        }
+        Commands::Config => {
+            let options = config::describe_config_options()?;
+            println!("Available configuration options:\n");
+            for option in options {
+                println!("{}", option.key);
+                println!("  Type: {}", option.value_type);
+                println!("  Default: {}", option.default);
+                println!("  Current: {}", option.current);
+                println!("  {}\n", option.description);
+            }
         }
     }
 

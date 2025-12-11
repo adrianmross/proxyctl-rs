@@ -14,6 +14,8 @@ pub struct ProxySettings {
     pub enable_http_proxy: bool,
     pub enable_https_proxy: bool,
     pub enable_ftp_proxy: bool,
+    pub enable_all_proxy: bool,
+    pub enable_proxy_rsync: bool,
     pub enable_no_proxy: bool,
 }
 
@@ -23,6 +25,8 @@ impl Default for ProxySettings {
             enable_http_proxy: true,
             enable_https_proxy: true,
             enable_ftp_proxy: true,
+            enable_all_proxy: true,
+            enable_proxy_rsync: true,
             enable_no_proxy: true,
         }
     }
@@ -38,6 +42,15 @@ pub struct AppConfig {
     pub wpad_url: Option<String>,
     #[serde(default)]
     pub proxy_settings: ProxySettings,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConfigOptionDescriptor {
+    pub key: &'static str,
+    pub value_type: &'static str,
+    pub description: &'static str,
+    pub default: String,
+    pub current: String,
 }
 
 #[derive(Deserialize)]
@@ -206,6 +219,125 @@ pub fn initialize_config() -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn describe_config_options() -> Result<Vec<ConfigOptionDescriptor>> {
+    let default_config = AppConfig::default();
+    let current_config = load_config()?;
+
+    let mut options = Vec::new();
+
+    options.push(ConfigOptionDescriptor {
+        key: "default_hosts_file",
+        value_type: "string",
+        description: "File name used for proxy host entries within the config directory",
+        default: clone_or_none(default_config.default_hosts_file.as_ref()),
+        current: clone_or_none(current_config.default_hosts_file.as_ref()),
+    });
+
+    options.push(ConfigOptionDescriptor {
+        key: "no_proxy",
+        value_type: "list<string>",
+        description: "Additional hosts appended to the NO_PROXY environment variable",
+        default: join_list(default_config.no_proxy.as_ref()),
+        current: join_list(current_config.no_proxy.as_ref()),
+    });
+
+    options.push(ConfigOptionDescriptor {
+        key: "default_proxy",
+        value_type: "string",
+        description: "Fallback proxy URL used when detection is disabled or unavailable",
+        default: clone_or_none(default_config.default_proxy.as_ref()),
+        current: clone_or_none(current_config.default_proxy.as_ref()),
+    });
+
+    let default_wpad = default_config
+        .enable_wpad_discovery
+        .unwrap_or(true)
+        .to_string();
+    let current_wpad = current_config
+        .enable_wpad_discovery
+        .unwrap_or(default_config.enable_wpad_discovery.unwrap_or(true))
+        .to_string();
+
+    options.push(ConfigOptionDescriptor {
+        key: "enable_wpad_discovery",
+        value_type: "bool",
+        description: "Enable Web Proxy Auto-Discovery (WPAD) when no proxy URL is provided",
+        default: default_wpad,
+        current: current_wpad,
+    });
+
+    options.push(ConfigOptionDescriptor {
+        key: "wpad_url",
+        value_type: "string",
+        description: "Override the WPAD URL used when discovery is enabled",
+        default: clone_or_none(default_config.wpad_url.as_ref()),
+        current: clone_or_none(current_config.wpad_url.as_ref()),
+    });
+
+    options.push(ConfigOptionDescriptor {
+        key: "proxy_settings.enable_http_proxy",
+        value_type: "bool",
+        description: "Control whether HTTP proxy environment variables are managed",
+        default: default_config.proxy_settings.enable_http_proxy.to_string(),
+        current: current_config.proxy_settings.enable_http_proxy.to_string(),
+    });
+
+    options.push(ConfigOptionDescriptor {
+        key: "proxy_settings.enable_https_proxy",
+        value_type: "bool",
+        description: "Control whether HTTPS proxy environment variables are managed",
+        default: default_config.proxy_settings.enable_https_proxy.to_string(),
+        current: current_config.proxy_settings.enable_https_proxy.to_string(),
+    });
+
+    options.push(ConfigOptionDescriptor {
+        key: "proxy_settings.enable_ftp_proxy",
+        value_type: "bool",
+        description: "Control whether FTP proxy environment variables are managed",
+        default: default_config.proxy_settings.enable_ftp_proxy.to_string(),
+        current: current_config.proxy_settings.enable_ftp_proxy.to_string(),
+    });
+
+    options.push(ConfigOptionDescriptor {
+        key: "proxy_settings.enable_all_proxy",
+        value_type: "bool",
+        description: "Control whether ALL_PROXY environment variables are managed",
+        default: default_config.proxy_settings.enable_all_proxy.to_string(),
+        current: current_config.proxy_settings.enable_all_proxy.to_string(),
+    });
+
+    options.push(ConfigOptionDescriptor {
+        key: "proxy_settings.enable_proxy_rsync",
+        value_type: "bool",
+        description: "Control whether PROXY_RSYNC environment variables are managed",
+        default: default_config.proxy_settings.enable_proxy_rsync.to_string(),
+        current: current_config.proxy_settings.enable_proxy_rsync.to_string(),
+    });
+
+    options.push(ConfigOptionDescriptor {
+        key: "proxy_settings.enable_no_proxy",
+        value_type: "bool",
+        description: "Control whether the NO_PROXY environment variable is managed",
+        default: default_config.proxy_settings.enable_no_proxy.to_string(),
+        current: current_config.proxy_settings.enable_no_proxy.to_string(),
+    });
+
+    Ok(options)
+}
+
+fn clone_or_none(value: Option<&String>) -> String {
+    value
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| "None".to_string())
+}
+
+fn join_list(value: Option<&Vec<String>>) -> String {
+    match value {
+        Some(items) if !items.is_empty() => items.join(", "),
+        _ => "None".to_string(),
+    }
 }
 
 fn ssh_lock() -> &'static Mutex<()> {
