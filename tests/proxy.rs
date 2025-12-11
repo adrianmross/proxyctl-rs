@@ -79,6 +79,9 @@ async fn test_proxy_status() {
     let status = proxy::get_status().await.unwrap();
     assert!(status.contains("HTTP Proxy:"));
     assert!(status.contains("HTTPS Proxy:"));
+    assert!(status.contains("FTP Proxy:"));
+    assert!(status.contains("All Proxy:"));
+    assert!(status.contains("Proxy Rsync:"));
     assert!(status.contains("No Proxy:"));
 }
 
@@ -88,6 +91,9 @@ async fn test_status_reflects_disable_without_vars() {
     let _guard = EnvGuard::set([
         ("http_proxy", "http://proxy.example.com:8080"),
         ("https_proxy", "http://proxy.example.com:8080"),
+        ("ftp_proxy", "http://proxy.example.com:8080"),
+        ("all_proxy", "http://proxy.example.com:8080"),
+        ("proxy_rsync", "http://proxy.example.com:8080"),
         ("no_proxy", "localhost"),
     ]);
 
@@ -96,6 +102,9 @@ async fn test_status_reflects_disable_without_vars() {
 
     assert!(status.contains("HTTP Proxy: Not set"));
     assert!(status.contains("HTTPS Proxy: Not set"));
+    assert!(status.contains("FTP Proxy: Not set"));
+    assert!(status.contains("All Proxy: Not set"));
+    assert!(status.contains("Proxy Rsync: Not set"));
     assert!(status.contains("No Proxy: Not set"));
 }
 

@@ -10,6 +10,8 @@ pub struct EnvState {
     pub http_proxy: Option<String>,
     pub https_proxy: Option<String>,
     pub ftp_proxy: Option<String>,
+    pub all_proxy: Option<String>,
+    pub proxy_rsync: Option<String>,
     pub no_proxy: Option<String>,
 }
 
@@ -80,6 +82,20 @@ pub async fn save_env_state(db_path: &str, state: &EnvState) -> Result<()> {
         )
         .await?;
     }
+    if let Some(ref v) = state.all_proxy {
+        conn.execute(
+            "INSERT INTO env_state (key, value) VALUES (?1, ?2)",
+            ("all_proxy", v.as_str()),
+        )
+        .await?;
+    }
+    if let Some(ref v) = state.proxy_rsync {
+        conn.execute(
+            "INSERT INTO env_state (key, value) VALUES (?1, ?2)",
+            ("proxy_rsync", v.as_str()),
+        )
+        .await?;
+    }
     if let Some(ref v) = state.no_proxy {
         conn.execute(
             "INSERT INTO env_state (key, value) VALUES (?1, ?2)",
@@ -108,6 +124,8 @@ pub async fn load_env_state(db_path: &str) -> Result<EnvState> {
             "http_proxy" => state.http_proxy = Some(value),
             "https_proxy" => state.https_proxy = Some(value),
             "ftp_proxy" => state.ftp_proxy = Some(value),
+            "all_proxy" => state.all_proxy = Some(value),
+            "proxy_rsync" => state.proxy_rsync = Some(value),
             "no_proxy" => state.no_proxy = Some(value),
             _ => {}
         }

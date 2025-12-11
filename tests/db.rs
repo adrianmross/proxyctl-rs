@@ -27,6 +27,8 @@ async fn test_save_and_load_env_state() {
         http_proxy: Some("http://example.com:8080".to_string()),
         https_proxy: Some("http://example.com:8080".to_string()),
         ftp_proxy: None,
+        all_proxy: Some("http://all.example.com:8080".to_string()),
+        proxy_rsync: Some("http://rsync.example.com:8080".to_string()),
         no_proxy: Some("localhost".to_string()),
     };
 

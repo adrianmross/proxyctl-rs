@@ -29,6 +29,12 @@ pub async fn set_proxy(proxy_url: &str) -> Result<()> {
     if proxy_settings.enable_ftp_proxy {
         set_env_vars(&FTP_PROXY_KEYS, proxy_url);
     }
+    if proxy_settings.enable_all_proxy {
+        set_env_vars(&ALL_PROXY_KEYS, proxy_url);
+    }
+    if proxy_settings.enable_proxy_rsync {
+        set_env_vars(&PROXY_RSYNC_KEYS, proxy_url);
+    }
     if let Some(ref no_proxy_str) = no_proxy_value {
         set_env_vars(&NO_PROXY_KEYS, no_proxy_str);
     }
@@ -45,6 +51,12 @@ pub async fn set_proxy(proxy_url: &str) -> Result<()> {
     if proxy_settings.enable_ftp_proxy {
         state.ftp_proxy = Some(proxy_url.to_string());
     }
+    if proxy_settings.enable_all_proxy {
+        state.all_proxy = Some(proxy_url.to_string());
+    }
+    if proxy_settings.enable_proxy_rsync {
+        state.proxy_rsync = Some(proxy_url.to_string());
+    }
     if let Some(no_proxy_str) = no_proxy_value {
         state.no_proxy = Some(no_proxy_str);
     }
@@ -57,6 +69,8 @@ pub async fn disable_proxy() -> Result<()> {
     clear_env_vars(&HTTP_PROXY_KEYS);
     clear_env_vars(&HTTPS_PROXY_KEYS);
     clear_env_vars(&FTP_PROXY_KEYS);
+    clear_env_vars(&ALL_PROXY_KEYS);
+    clear_env_vars(&PROXY_RSYNC_KEYS);
     clear_env_vars(&NO_PROXY_KEYS);
 
     remove_persisted_settings()?;
@@ -74,22 +88,32 @@ pub async fn get_status() -> Result<String> {
     let mut status_lines = Vec::new();
 
     if proxy_settings.enable_http_proxy {
-        let env_value = env::var("http_proxy").ok();
+        let env_value = get_env_value(&HTTP_PROXY_KEYS);
         let value = state.http_proxy.as_deref().or(env_value.as_deref());
         status_lines.push(format!("HTTP Proxy: {}", value.unwrap_or("Not set")));
     }
     if proxy_settings.enable_https_proxy {
-        let env_value = env::var("https_proxy").ok();
+        let env_value = get_env_value(&HTTPS_PROXY_KEYS);
         let value = state.https_proxy.as_deref().or(env_value.as_deref());
         status_lines.push(format!("HTTPS Proxy: {}", value.unwrap_or("Not set")));
     }
     if proxy_settings.enable_ftp_proxy {
-        let env_value = env::var("ftp_proxy").ok();
+        let env_value = get_env_value(&FTP_PROXY_KEYS);
         let value = state.ftp_proxy.as_deref().or(env_value.as_deref());
         status_lines.push(format!("FTP Proxy: {}", value.unwrap_or("Not set")));
     }
+    if proxy_settings.enable_all_proxy {
+        let env_value = get_env_value(&ALL_PROXY_KEYS);
+        let value = state.all_proxy.as_deref().or(env_value.as_deref());
+        status_lines.push(format!("All Proxy: {}", value.unwrap_or("Not set")));
+    }
+    if proxy_settings.enable_proxy_rsync {
+        let env_value = get_env_value(&PROXY_RSYNC_KEYS);
+        let value = state.proxy_rsync.as_deref().or(env_value.as_deref());
+        status_lines.push(format!("Proxy Rsync: {}", value.unwrap_or("Not set")));
+    }
     if proxy_settings.enable_no_proxy {
-        let env_value = env::var("no_proxy").ok();
+        let env_value = get_env_value(&NO_PROXY_KEYS);
         let value = state.no_proxy.as_deref().or(env_value.as_deref());
         status_lines.push(format!("No Proxy: {}", value.unwrap_or("Not set")));
     }
@@ -146,6 +170,8 @@ pub async fn resolve_proxy(proxy: Option<&str>) -> Result<ResolvedProxy> {
 const HTTP_PROXY_KEYS: [&str; 2] = ["http_proxy", "HTTP_PROXY"];
 const HTTPS_PROXY_KEYS: [&str; 2] = ["https_proxy", "HTTPS_PROXY"];
 const FTP_PROXY_KEYS: [&str; 2] = ["ftp_proxy", "FTP_PROXY"];
+const ALL_PROXY_KEYS: [&str; 2] = ["all_proxy", "ALL_PROXY"];
+const PROXY_RSYNC_KEYS: [&str; 2] = ["proxy_rsync", "PROXY_RSYNC"];
 const NO_PROXY_KEYS: [&str; 2] = ["no_proxy", "NO_PROXY"];
 
 fn persist_proxy_settings(proxy_url: &str, no_proxy: Option<&str>) -> Result<()> {
@@ -159,25 +185,45 @@ fn persist_proxy_settings(proxy_url: &str, no_proxy: Option<&str>) -> Result<()>
         // Remove existing proxy settings
         lines.retain(|line| {
             !line.contains("export http_proxy=")
+                && !line.contains("export HTTP_PROXY=")
                 && !line.contains("export https_proxy=")
+                && !line.contains("export HTTPS_PROXY=")
                 && !line.contains("export ftp_proxy=")
+                && !line.contains("export FTP_PROXY=")
+                && !line.contains("export all_proxy=")
+                && !line.contains("export ALL_PROXY=")
+                && !line.contains("export proxy_rsync=")
+                && !line.contains("export PROXY_RSYNC=")
                 && !line.contains("export no_proxy=")
+                && !line.contains("export NO_PROXY=")
         });
 
         // Add new settings based on config
         if proxy_settings.enable_http_proxy {
-            lines.push(format!("export http_proxy=\"{proxy_url}\""));
+            persist_keyed_proxy(&mut lines, "http_proxy", proxy_url);
+            persist_keyed_proxy(&mut lines, "HTTP_PROXY", proxy_url);
         }
         if proxy_settings.enable_https_proxy {
-            lines.push(format!("export https_proxy=\"{proxy_url}\""));
+            persist_keyed_proxy(&mut lines, "https_proxy", proxy_url);
+            persist_keyed_proxy(&mut lines, "HTTPS_PROXY", proxy_url);
         }
         if proxy_settings.enable_ftp_proxy {
-            lines.push(format!("export ftp_proxy=\"{proxy_url}\""));
+            persist_keyed_proxy(&mut lines, "ftp_proxy", proxy_url);
+            persist_keyed_proxy(&mut lines, "FTP_PROXY", proxy_url);
+        }
+        if proxy_settings.enable_all_proxy {
+            persist_keyed_proxy(&mut lines, "all_proxy", proxy_url);
+            persist_keyed_proxy(&mut lines, "ALL_PROXY", proxy_url);
+        }
+        if proxy_settings.enable_proxy_rsync {
+            persist_keyed_proxy(&mut lines, "proxy_rsync", proxy_url);
+            persist_keyed_proxy(&mut lines, "PROXY_RSYNC", proxy_url);
         }
         if proxy_settings.enable_no_proxy {
             if let Some(value) = no_proxy {
                 if !value.is_empty() {
-                    lines.push(format!("export no_proxy=\"{value}\""));
+                    persist_keyed_proxy(&mut lines, "no_proxy", value);
+                    persist_keyed_proxy(&mut lines, "NO_PROXY", value);
                 }
             }
         }
@@ -196,9 +242,17 @@ fn remove_persisted_settings() -> Result<()> {
             .lines()
             .filter(|line| {
                 !line.contains("export http_proxy=")
+                    && !line.contains("export HTTP_PROXY=")
                     && !line.contains("export https_proxy=")
+                    && !line.contains("export HTTPS_PROXY=")
                     && !line.contains("export ftp_proxy=")
+                    && !line.contains("export FTP_PROXY=")
+                    && !line.contains("export all_proxy=")
+                    && !line.contains("export ALL_PROXY=")
+                    && !line.contains("export proxy_rsync=")
+                    && !line.contains("export PROXY_RSYNC=")
                     && !line.contains("export no_proxy=")
+                    && !line.contains("export NO_PROXY=")
             })
             .map(|s| s.to_string())
             .collect();
@@ -219,6 +273,21 @@ fn clear_env_vars(keys: &[&str]) {
     for key in keys {
         env::remove_var(key);
     }
+}
+
+fn persist_keyed_proxy(lines: &mut Vec<String>, key: &str, value: &str) {
+    lines.push(format!("export {key}=\"{value}\""));
+}
+
+fn get_env_value(keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Ok(value) = env::var(key) {
+            if !value.is_empty() {
+                return Some(value);
+            }
+        }
+    }
+    None
 }
 
 async fn save_env_state(state: &db::EnvState) -> Result<()> {
@@ -263,9 +332,15 @@ fn resolved_from_value(value: &str) -> Result<ResolvedProxy> {
 }
 
 fn proxy_from_env() -> Option<ResolvedProxy> {
-    const VARS: [&str; 4] = ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"];
-    for key in VARS {
-        if let Ok(value) = env::var(key) {
+    const VARS: [&[&str]; 5] = [
+        &HTTPS_PROXY_KEYS,
+        &HTTP_PROXY_KEYS,
+        &ALL_PROXY_KEYS,
+        &FTP_PROXY_KEYS,
+        &PROXY_RSYNC_KEYS,
+    ];
+    for keys in VARS {
+        if let Some(value) = get_env_value(keys) {
             if let Some(host) = extract_proxy_host(&value) {
                 return Some(ResolvedProxy {
                     proxy_url: value,
