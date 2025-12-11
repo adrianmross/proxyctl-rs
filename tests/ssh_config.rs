@@ -6,7 +6,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use proxyctl_rs::config;
 
 fn proxy_line(proxy_host: &str) -> String {
-    format!("ProxyCommand nc -x {proxy_host} %h %p")
+    format!("ProxyCommand /usr/bin/nc -X connect -x {proxy_host} %h %p")
 }
 
 struct SshFixture {
@@ -16,7 +16,8 @@ struct SshFixture {
     hosts_path: PathBuf,
     backup_path: PathBuf,
     _home_guard: EnvGuard,
-    _xdg_guard: EnvGuard,
+    _xdg_config_guard: EnvGuard,
+    _xdg_data_guard: EnvGuard,
 }
 
 impl SshFixture {
@@ -28,9 +29,12 @@ impl SshFixture {
         let ssh_dir = home_dir.join(".ssh");
         let config_root = home_dir.join(".config");
         let config_dir = config_root.join("proxyctl-rs");
+        let data_root = home_dir.join(".local").join("share");
+        let data_dir = data_root.join("proxyctl-rs");
 
         fs::create_dir_all(&ssh_dir).expect("create .ssh");
         fs::create_dir_all(&config_dir).expect("create config dir");
+        fs::create_dir_all(&data_dir).expect("create data dir");
 
         let ssh_config_path = ssh_dir.join("config");
         fs::write(&ssh_config_path, ssh_config).expect("write ssh config");
@@ -42,7 +46,8 @@ impl SshFixture {
         fs::write(&hosts_path, hosts).expect("write hosts file");
 
         let home_guard = EnvGuard::new("HOME", &home_dir);
-        let xdg_guard = EnvGuard::new("XDG_CONFIG_HOME", &config_root);
+        let xdg_config_guard = EnvGuard::new("XDG_CONFIG_HOME", &config_root);
+        let xdg_data_guard = EnvGuard::new("XDG_DATA_HOME", &data_root);
 
         let backup_path = ssh_dir.join("config.proxyctl-rs.bak");
 
@@ -53,7 +58,8 @@ impl SshFixture {
             hosts_path,
             backup_path,
             _home_guard: home_guard,
-            _xdg_guard: xdg_guard,
+            _xdg_config_guard: xdg_config_guard,
+            _xdg_data_guard: xdg_data_guard,
         }
     }
 

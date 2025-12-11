@@ -35,7 +35,7 @@ pub async fn set_proxy(proxy_url: &str) -> Result<()> {
 
     persist_proxy_settings(proxy_url, no_proxy_value.as_deref())?;
 
-        let mut state = db::EnvState::default();
+    let mut state = db::EnvState::default();
     if proxy_settings.enable_http_proxy {
         state.http_proxy = Some(proxy_url.to_string());
     }
@@ -67,7 +67,9 @@ pub async fn disable_proxy() -> Result<()> {
 
 pub async fn get_status() -> Result<String> {
     let proxy_settings = config::get_proxy_settings()?;
-    let state = load_env_state().await.unwrap_or_else(|_| db::EnvState::default());
+    let state = load_env_state()
+        .await
+        .unwrap_or_else(|_| db::EnvState::default());
 
     let mut status_lines = Vec::new();
 

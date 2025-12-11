@@ -4,7 +4,11 @@ use tempfile::TempDir;
 #[tokio::test]
 async fn test_init_db() {
     let temp_dir = TempDir::new().unwrap();
-    let db_path = temp_dir.path().join("test.db").to_string_lossy().to_string();
+    let db_path = temp_dir
+        .path()
+        .join("test.db")
+        .to_string_lossy()
+        .to_string();
     db::init_db(&db_path).await.unwrap();
     // Just check it doesn't error
 }
@@ -12,7 +16,11 @@ async fn test_init_db() {
 #[tokio::test]
 async fn test_save_and_load_env_state() {
     let temp_dir = TempDir::new().unwrap();
-    let db_path = temp_dir.path().join("test.db").to_string_lossy().to_string();
+    let db_path = temp_dir
+        .path()
+        .join("test.db")
+        .to_string_lossy()
+        .to_string();
     db::init_db(&db_path).await.unwrap();
 
     let state = db::EnvState {
@@ -31,7 +39,11 @@ async fn test_save_and_load_env_state() {
 #[tokio::test]
 async fn test_load_empty_db() {
     let temp_dir = TempDir::new().unwrap();
-    let db_path = temp_dir.path().join("test.db").to_string_lossy().to_string();
+    let db_path = temp_dir
+        .path()
+        .join("test.db")
+        .to_string_lossy()
+        .to_string();
     db::init_db(&db_path).await.unwrap();
 
     let loaded = db::load_env_state(&db_path).await.unwrap();

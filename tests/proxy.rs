@@ -43,10 +43,19 @@ struct ConfigDirGuard {
 impl ConfigDirGuard {
     fn new() -> Self {
         let dir = tempfile::tempdir().expect("temp config dir");
-        let env_guard = EnvGuard::set([(
-            "XDG_CONFIG_HOME",
-            dir.path().to_string_lossy().into_owned(),
-        )]);
+        let config_dir = dir.path().join("config");
+        let data_dir = dir.path().join("data");
+        let home_dir = dir.path().join("home");
+        std::fs::create_dir_all(&config_dir).expect("config dir");
+        std::fs::create_dir_all(&data_dir).expect("data dir");
+        std::fs::create_dir_all(&home_dir).expect("home dir");
+
+        let env_guard = EnvGuard::set([
+            ("XDG_CONFIG_HOME", config_dir.to_string_lossy().into_owned()),
+            ("XDG_DATA_HOME", data_dir.to_string_lossy().into_owned()),
+            ("HOME", home_dir.to_string_lossy().into_owned()),
+            ("SHELL", "/bin/false".to_string()),
+        ]);
         Self {
             _dir: dir,
             _env_guard: env_guard,

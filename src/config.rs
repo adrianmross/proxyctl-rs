@@ -75,7 +75,7 @@ impl Default for AppConfig {
 }
 
 pub fn get_config_dir() -> Result<PathBuf> {
-    if let Ok(xdg_config) = env::var("XDG_CONFIG_HOME") {
+    if let Some(xdg_config) = env::var_os("XDG_CONFIG_HOME") {
         let path = PathBuf::from(xdg_config).join("proxyctl-rs");
         fs::create_dir_all(&path)?;
         return Ok(path);
@@ -94,6 +94,28 @@ pub fn get_config_dir() -> Result<PathBuf> {
     }
 
     Err(anyhow!("Could not find config directory"))
+}
+
+pub fn get_data_dir() -> Result<PathBuf> {
+    if let Some(xdg_data) = env::var_os("XDG_DATA_HOME") {
+        let path = PathBuf::from(xdg_data).join("proxyctl-rs");
+        fs::create_dir_all(&path)?;
+        return Ok(path);
+    }
+
+    if let Some(data_dir) = dirs::data_dir() {
+        let path = data_dir.join("proxyctl-rs");
+        fs::create_dir_all(&path)?;
+        return Ok(path);
+    }
+
+    if let Some(home_dir) = dirs::home_dir() {
+        let path = home_dir.join(".local").join("share").join("proxyctl-rs");
+        fs::create_dir_all(&path)?;
+        return Ok(path);
+    }
+
+    Err(anyhow!("Could not find data directory"))
 }
 
 pub fn load_config() -> Result<AppConfig> {
@@ -283,8 +305,10 @@ pub fn remove_ssh_hosts() -> Result<()> {
             if matches_host {
                 let mut removal_indices: Vec<usize> = Vec::new();
                 for (offset, line) in lines.iter().take(block_end).skip(index + 1).enumerate() {
-                    let trimmed = line.trim_start().to_ascii_lowercase();
-                    if trimmed.starts_with("proxycommand ") && trimmed.contains("/usr/bin/nc -X") {
+                    let trimmed_lower = line.trim_start().to_ascii_lowercase();
+                    if trimmed_lower.starts_with("proxycommand ")
+                        && trimmed_lower.contains("/usr/bin/nc -x")
+                    {
                         removal_indices.push(index + 1 + offset);
                     }
                 }
