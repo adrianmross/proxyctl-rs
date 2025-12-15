@@ -1,9 +1,6 @@
-use proxyctl_rs::config;
-
 #[test]
 fn describe_config_options_includes_defaults() {
-    let options = config::describe_config_options().unwrap();
-    let keys: Vec<&str> = options.iter().map(|option| option.key).collect();
-    assert!(keys.contains(&"default_hosts_file"));
-    assert!(keys.contains(&"proxy_settings.enable_http_proxy"));
+    let config = proxyctl_rs::config::AppConfig::default();
+    assert_eq!(config.default_hosts_file, Some("hosts".to_string()));
+    assert!(config.proxy_settings.enable_http_proxy);
 }

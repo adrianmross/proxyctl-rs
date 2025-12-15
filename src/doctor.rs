@@ -81,3 +81,16 @@ async fn check_database() -> Result<String> {
     let file_path = PathBuf::from(&db_path);
     Ok(format!("database reachable at {}", file_path.display()))
 }
+
+pub fn print_config() -> Result<()> {
+    let current = config::load_config()?;
+    let default = config::AppConfig::default();
+
+    let current_toml = toml::to_string(&current)?;
+    let default_toml = toml::to_string(&default)?;
+
+    println!("Current configuration:\n{}", current_toml.trim());
+    println!("\nDefault configuration:\n{}", default_toml.trim());
+
+    Ok(())
+}

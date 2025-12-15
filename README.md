@@ -71,7 +71,10 @@ proxyctl-rs ssh remove
 proxyctl-rs status
 
 # Run diagnostic checks
-proxyctl-rs doctor
+proxyctl-rs doctor run
+
+# Inspect configuration values
+proxyctl-rs doctor config
 ```
 
 ## Shell Integration

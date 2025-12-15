@@ -36,10 +36,11 @@ enum Commands {
     },
     /// Show current proxy status
     Status,
-    /// Run diagnostics for configuration and database
-    Doctor,
-    /// List available configuration options and their values
-    Config,
+    /// Run diagnostics or inspect configuration state
+    Doctor {
+        #[command(subcommand)]
+        action: Option<DoctorCommands>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -52,6 +53,14 @@ enum SshCommands {
     },
     /// Remove proxy hosts from SSH config
     Remove,
+}
+
+#[derive(Subcommand, Clone)]
+enum DoctorCommands {
+    /// Run diagnostics for configuration and database
+    Run,
+    /// Display the current and default configuration values
+    Config,
 }
 
 #[tokio::main]
@@ -102,20 +111,14 @@ async fn main() -> Result<()> {
             let status = proxy::get_status().await?;
             println!("{status}");
         }
-        Commands::Doctor => {
-            doctor::run().await?;
-        }
-        Commands::Config => {
-            let options = config::describe_config_options()?;
-            println!("Available configuration options:\n");
-            for option in options {
-                println!("{}", option.key);
-                println!("  Type: {}", option.value_type);
-                println!("  Default: {}", option.default);
-                println!("  Current: {}", option.current);
-                println!("  {}\n", option.description);
+        Commands::Doctor { action } => match action.unwrap_or(DoctorCommands::Run) {
+            DoctorCommands::Run => {
+                doctor::run().await?;
             }
-        }
+            DoctorCommands::Config => {
+                doctor::print_config()?;
+            }
+        },
     }
 
     Ok(())
