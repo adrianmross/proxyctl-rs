@@ -76,14 +76,23 @@ proxyctl-rs doctor
 
 ## Shell Integration
 
-The tool automatically integrates with your shell by modifying your shell profile (`.bashrc`, `.zshrc`, etc.).
+The tool automatically integrates with your shell by modifying your shell profile (`.zshenv`, `.bash_profile`, etc.).
 
-For bash compatibility (especially for jobs), you can target bash specifically:
+You can target a shell specifically:
 
 ```bash
-# The tool detects your shell automatically, but you can override
+# Detects shell automatically, but you can override
 export SHELL=/bin/bash
 proxyctl-rs on
+```
+
+Proxy entries in managed profiles are wrapped with:
+
+```bash
+### MANAGED BY PROXYCTL-RS START (DO NOT EDIT)
+export http_proxy="..."
+...
+### MANAGED BY PROXYCTL-RS END (DO NOT EDIT)
 ```
 
 ## Configuration
@@ -117,6 +126,19 @@ enable_http_proxy = true
 enable_https_proxy = true
 enable_ftp_proxy = true
 enable_no_proxy = true
+
+[shell_integration]
+# autodetect the shell from $SHELL
+detect_shell = true
+
+# fallback when detection is disabled or missing
+default_shell = "bash"
+
+# manage additional shell profiles explicitly
+shells = ["bash", "zsh"]
+
+# optional paths to update
+profile_paths = ["~/.bash_profile", "~/.zshenv"]
 ```
 
 ### Example hosts.txt
