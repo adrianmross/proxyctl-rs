@@ -164,6 +164,16 @@ fn collect_snapshots(
     }
 }
 
+struct PendingComment {
+    closing: char,
+    comment: String,
+}
+
+struct RenderedLine {
+    text: String,
+    deferred: Option<PendingComment>,
+}
+
 fn highlight_toml_with_annotations(
     current: &config::AppConfig,
     annotations: &BTreeMap<Vec<String>, ValueSnapshot>,
@@ -171,6 +181,7 @@ fn highlight_toml_with_annotations(
     let toml_string = to_string_pretty(current)?;
     let mut result = String::new();
     let mut table_path: Vec<String> = Vec::new();
+    let mut pending_comments: Vec<PendingComment> = Vec::new();
 
     for line in toml_string.lines() {
         let trimmed = line.trim_start();
@@ -195,11 +206,25 @@ fn highlight_toml_with_annotations(
             let mut full_path = table_path.clone();
             full_path.push(key.to_string());
             let rendered = render_line(indent, key, value_text, annotations.get(&full_path));
-            result.push_str(&rendered);
+            result.push_str(&rendered.text);
+            if let Some(deferred) = rendered.deferred {
+                pending_comments.push(deferred);
+            }
         } else {
-            result.push_str(indent);
-            result.push_str(trimmed);
-            result.push('\n');
+            let mut line_buf = String::new();
+            line_buf.push_str(indent);
+            line_buf.push_str(trimmed);
+
+            if let Some(pending) = pending_comments.last() {
+                if line_starts_with(trimmed, pending.closing) {
+                    if let Some(pending) = pending_comments.pop() {
+                        line_buf.push_str(&pending.comment);
+                    }
+                }
+            }
+
+            line_buf.push('\n');
+            result.push_str(&line_buf);
         }
     }
 
@@ -211,11 +236,13 @@ fn render_line(
     key: &str,
     value_text: &str,
     annotation: Option<&ValueSnapshot>,
-) -> String {
+) -> RenderedLine {
     let mut line = String::new();
     line.push_str(indent);
     line.push_str(&key.bold().to_string());
     line.push_str(" = ");
+
+    let mut deferred = None;
 
     if let Some(snapshot) = annotation {
         let kind = value_kind(&snapshot.current);
@@ -237,12 +264,19 @@ fn render_line(
         }
 
         if !comment_parts.is_empty() {
-            line.push_str("  ");
-            line.push_str(&"#".bright_black().to_string());
+            let mut comment = String::new();
+            comment.push_str("  ");
+            comment.push_str(&"#".bright_black().to_string());
 
             for part in comment_parts {
-                line.push(' ');
-                line.push_str(&part.to_string());
+                comment.push(' ');
+                comment.push_str(&part.to_string());
+            }
+
+            if let Some(closing) = multiline_closing(kind, value_text) {
+                deferred = Some(PendingComment { closing, comment });
+            } else {
+                line.push_str(&comment);
             }
         }
     } else {
@@ -250,7 +284,22 @@ fn render_line(
     }
 
     line.push('\n');
-    line
+    RenderedLine {
+        text: line,
+        deferred,
+    }
+}
+
+fn multiline_closing(kind: ValueKind, value_text: &str) -> Option<char> {
+    match (kind, value_text) {
+        (ValueKind::Array, "[") => Some(']'),
+        (ValueKind::Object, "{") => Some('}'),
+        _ => None,
+    }
+}
+
+fn line_starts_with(line: &str, expected: char) -> bool {
+    line.starts_with(expected)
 }
 
 fn parse_table_path(line: &str) -> Option<Vec<String>> {
