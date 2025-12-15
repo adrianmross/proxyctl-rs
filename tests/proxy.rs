@@ -53,12 +53,33 @@ impl ConfigDirGuard {
         std::fs::create_dir_all(&data_dir).expect("data dir");
         std::fs::create_dir_all(&home_dir).expect("home dir");
 
-        let env_guard = EnvGuard::set([
+        let mut entries: Vec<(&'static str, String)> = vec![
             ("XDG_CONFIG_HOME", config_dir.to_string_lossy().into_owned()),
             ("XDG_DATA_HOME", data_dir.to_string_lossy().into_owned()),
             ("HOME", home_dir.to_string_lossy().into_owned()),
             ("SHELL", "/bin/false".to_string()),
-        ]);
+        ];
+
+        const PROXY_ENV_VARS: [&str; 12] = [
+            "http_proxy",
+            "HTTP_PROXY",
+            "https_proxy",
+            "HTTPS_PROXY",
+            "ftp_proxy",
+            "FTP_PROXY",
+            "all_proxy",
+            "ALL_PROXY",
+            "proxy_rsync",
+            "PROXY_RSYNC",
+            "no_proxy",
+            "NO_PROXY",
+        ];
+
+        for key in PROXY_ENV_VARS {
+            entries.push((key, String::new()));
+        }
+
+        let env_guard = EnvGuard::set(entries);
         Self {
             _dir: dir,
             _env_guard: env_guard,
@@ -112,9 +133,11 @@ async fn test_status_reflects_disable_without_vars() {
 async fn test_resolve_proxy_uses_default_when_wpad_disabled() {
     let _config_guard = ConfigDirGuard::new();
 
-    let mut config = config::AppConfig::default();
-    config.enable_wpad_discovery = Some(false);
-    config.default_proxy = Some("http://fallback.example.com:8080".to_string());
+    let config = config::AppConfig {
+        enable_wpad_discovery: Some(false),
+        default_proxy: Some("http://fallback.example.com:8080".to_string()),
+        ..config::AppConfig::default()
+    };
     config::save_config(&config).unwrap();
 
     let resolved = proxy::resolve_proxy(None).await.unwrap();
