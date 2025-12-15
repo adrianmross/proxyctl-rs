@@ -3,8 +3,10 @@ use crate::db;
 use crate::defaults;
 use crate::detect;
 use anyhow::{anyhow, Result};
+use std::collections::HashSet;
 use std::env;
 use std::fs;
+use std::path::{Path, PathBuf};
 
 pub async fn set_proxy(proxy_url: &str) -> Result<()> {
     let proxy_settings = config::get_proxy_settings()?;
@@ -39,7 +41,7 @@ pub async fn set_proxy(proxy_url: &str) -> Result<()> {
         set_env_vars(&NO_PROXY_KEYS, no_proxy_str);
     }
 
-    persist_proxy_settings(proxy_url, no_proxy_value.as_deref())?;
+    persist_proxy_settings(&proxy_settings, proxy_url, no_proxy_value.as_deref())?;
 
     let mut state = db::EnvState::default();
     if proxy_settings.enable_http_proxy {
@@ -173,91 +175,37 @@ const FTP_PROXY_KEYS: [&str; 2] = ["ftp_proxy", "FTP_PROXY"];
 const ALL_PROXY_KEYS: [&str; 2] = ["all_proxy", "ALL_PROXY"];
 const PROXY_RSYNC_KEYS: [&str; 2] = ["proxy_rsync", "PROXY_RSYNC"];
 const NO_PROXY_KEYS: [&str; 2] = ["no_proxy", "NO_PROXY"];
+const MANAGED_START: &str = "### MANAGED BY PROXYCTL-RS START (DO NOT EDIT)";
+const MANAGED_END: &str = "### MANAGED BY PROXYCTL-RS END (DO NOT EDIT)";
 
-fn persist_proxy_settings(proxy_url: &str, no_proxy: Option<&str>) -> Result<()> {
-    // Try to detect shell and update profile
-    let shell_profile = detect_shell_profile()?;
-    if let Some(profile) = shell_profile {
-        let proxy_settings = config::get_proxy_settings()?;
-        let content = fs::read_to_string(&profile)?;
-        let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+fn persist_proxy_settings(
+    proxy_settings: &config::ProxySettings,
+    proxy_url: &str,
+    no_proxy: Option<&str>,
+) -> Result<()> {
+    let profiles = resolve_shell_profiles()?;
+    if profiles.is_empty() {
+        return Ok(());
+    }
 
-        // Remove existing proxy settings
-        lines.retain(|line| {
-            !line.contains("export http_proxy=")
-                && !line.contains("export HTTP_PROXY=")
-                && !line.contains("export https_proxy=")
-                && !line.contains("export HTTPS_PROXY=")
-                && !line.contains("export ftp_proxy=")
-                && !line.contains("export FTP_PROXY=")
-                && !line.contains("export all_proxy=")
-                && !line.contains("export ALL_PROXY=")
-                && !line.contains("export proxy_rsync=")
-                && !line.contains("export PROXY_RSYNC=")
-                && !line.contains("export no_proxy=")
-                && !line.contains("export NO_PROXY=")
-        });
+    let exports = gather_proxy_exports(proxy_settings, proxy_url, no_proxy);
+    if exports.is_empty() {
+        for profile in profiles {
+            remove_managed_block(&profile)?;
+        }
+        return Ok(());
+    }
 
-        // Add new settings based on config
-        if proxy_settings.enable_http_proxy {
-            persist_keyed_proxy(&mut lines, "http_proxy", proxy_url);
-            persist_keyed_proxy(&mut lines, "HTTP_PROXY", proxy_url);
-        }
-        if proxy_settings.enable_https_proxy {
-            persist_keyed_proxy(&mut lines, "https_proxy", proxy_url);
-            persist_keyed_proxy(&mut lines, "HTTPS_PROXY", proxy_url);
-        }
-        if proxy_settings.enable_ftp_proxy {
-            persist_keyed_proxy(&mut lines, "ftp_proxy", proxy_url);
-            persist_keyed_proxy(&mut lines, "FTP_PROXY", proxy_url);
-        }
-        if proxy_settings.enable_all_proxy {
-            persist_keyed_proxy(&mut lines, "all_proxy", proxy_url);
-            persist_keyed_proxy(&mut lines, "ALL_PROXY", proxy_url);
-        }
-        if proxy_settings.enable_proxy_rsync {
-            persist_keyed_proxy(&mut lines, "proxy_rsync", proxy_url);
-            persist_keyed_proxy(&mut lines, "PROXY_RSYNC", proxy_url);
-        }
-        if proxy_settings.enable_no_proxy {
-            if let Some(value) = no_proxy {
-                if !value.is_empty() {
-                    persist_keyed_proxy(&mut lines, "no_proxy", value);
-                    persist_keyed_proxy(&mut lines, "NO_PROXY", value);
-                }
-            }
-        }
-
-        fs::write(&profile, lines.join("\n"))?;
+    for profile in profiles {
+        write_managed_block(&profile, &exports)?;
     }
 
     Ok(())
 }
 
 fn remove_persisted_settings() -> Result<()> {
-    let shell_profile = detect_shell_profile()?;
-    if let Some(profile) = shell_profile {
-        let content = fs::read_to_string(&profile)?;
-        let lines: Vec<String> = content
-            .lines()
-            .filter(|line| {
-                !line.contains("export http_proxy=")
-                    && !line.contains("export HTTP_PROXY=")
-                    && !line.contains("export https_proxy=")
-                    && !line.contains("export HTTPS_PROXY=")
-                    && !line.contains("export ftp_proxy=")
-                    && !line.contains("export FTP_PROXY=")
-                    && !line.contains("export all_proxy=")
-                    && !line.contains("export ALL_PROXY=")
-                    && !line.contains("export proxy_rsync=")
-                    && !line.contains("export PROXY_RSYNC=")
-                    && !line.contains("export no_proxy=")
-                    && !line.contains("export NO_PROXY=")
-            })
-            .map(|s| s.to_string())
-            .collect();
-
-        fs::write(&profile, lines.join("\n"))?;
+    for profile in resolve_shell_profiles()? {
+        remove_managed_block(&profile)?;
     }
 
     Ok(())
@@ -273,10 +221,6 @@ fn clear_env_vars(keys: &[&str]) {
     for key in keys {
         env::remove_var(key);
     }
-}
-
-fn persist_keyed_proxy(lines: &mut Vec<String>, key: &str, value: &str) {
-    lines.push(format!("export {key}=\"{value}\""));
 }
 
 fn get_env_value(keys: &[&str]) -> Option<String> {
@@ -298,28 +242,6 @@ async fn save_env_state(state: &db::EnvState) -> Result<()> {
 async fn load_env_state() -> Result<db::EnvState> {
     let db_path = db::get_db_path();
     db::load_env_state(&db_path).await
-}
-
-fn detect_shell_profile() -> Result<Option<String>> {
-    // Detect shell and return profile path
-    let shell = env::var("SHELL").unwrap_or_default();
-    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?;
-
-    let profile = if shell.contains("zsh") {
-        home.join(".zshrc")
-    } else if shell.contains("bash") {
-        // Prefer .bashrc for interactive, but check .bash_profile for login
-        let bashrc = home.join(".bashrc");
-        if bashrc.exists() {
-            bashrc
-        } else {
-            home.join(".bash_profile")
-        }
-    } else {
-        return Ok(None); // Unsupported shell
-    };
-
-    Ok(Some(profile.to_string_lossy().to_string()))
 }
 
 fn resolved_from_value(value: &str) -> Result<ResolvedProxy> {
@@ -429,4 +351,222 @@ fn split_host_port(input: &str) -> Option<(String, String)> {
     }
 
     None
+}
+
+fn gather_proxy_exports(
+    proxy_settings: &config::ProxySettings,
+    proxy_url: &str,
+    no_proxy: Option<&str>,
+) -> Vec<String> {
+    let mut exports = Vec::new();
+
+    if proxy_settings.enable_http_proxy {
+        add_export_lines(&mut exports, &HTTP_PROXY_KEYS, proxy_url);
+    }
+    if proxy_settings.enable_https_proxy {
+        add_export_lines(&mut exports, &HTTPS_PROXY_KEYS, proxy_url);
+    }
+    if proxy_settings.enable_ftp_proxy {
+        add_export_lines(&mut exports, &FTP_PROXY_KEYS, proxy_url);
+    }
+    if proxy_settings.enable_all_proxy {
+        add_export_lines(&mut exports, &ALL_PROXY_KEYS, proxy_url);
+    }
+    if proxy_settings.enable_proxy_rsync {
+        add_export_lines(&mut exports, &PROXY_RSYNC_KEYS, proxy_url);
+    }
+    if proxy_settings.enable_no_proxy {
+        if let Some(value) = no_proxy {
+            if !value.is_empty() {
+                add_export_lines(&mut exports, &NO_PROXY_KEYS, value);
+            }
+        }
+    }
+
+    exports
+}
+
+fn add_export_lines(target: &mut Vec<String>, keys: &[&str], value: &str) {
+    for key in keys {
+        target.push(format!("export {key}=\"{value}\""));
+    }
+}
+
+fn resolve_shell_profiles() -> Result<Vec<PathBuf>> {
+    let integration = config::get_shell_integration()?;
+    let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not find home directory"))?;
+
+    let config::ShellIntegration {
+        detect_shell,
+        default_shell,
+        shells,
+        profile_paths,
+    } = integration;
+
+    let mut profiles = Vec::new();
+    let mut seen = HashSet::new();
+
+    for path in profile_paths {
+        let expanded = expand_profile_path(&path, &home);
+        push_unique_path(&mut profiles, &mut seen, expanded);
+    }
+
+    let mut shell_names: HashSet<String> = HashSet::new();
+
+    if detect_shell {
+        if let Ok(shell_value) = env::var("SHELL") {
+            if let Some(name) = Path::new(shell_value.trim())
+                .file_name()
+                .and_then(|value| value.to_str())
+            {
+                if !name.is_empty() {
+                    shell_names.insert(name.to_ascii_lowercase());
+                }
+            }
+        }
+    }
+
+    for shell in shells {
+        if !shell.is_empty() {
+            shell_names.insert(shell.to_ascii_lowercase());
+        }
+    }
+
+    if let Some(default_shell) = default_shell {
+        if !default_shell.is_empty() {
+            shell_names.insert(default_shell.to_ascii_lowercase());
+        }
+    }
+
+    for shell in shell_names {
+        for profile in shell_profiles_for(&shell, &home) {
+            push_unique_path(&mut profiles, &mut seen, profile);
+        }
+    }
+
+    Ok(profiles)
+}
+
+fn shell_profiles_for(shell: &str, home: &Path) -> Vec<PathBuf> {
+    match shell {
+        "zsh" => vec![select_profile(&[".zshenv", ".zprofile", ".zshrc"], home)],
+        "bash" => vec![select_profile(&[".bash_profile", ".bashrc"], home)],
+        _ => Vec::new(),
+    }
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+fn select_profile(candidates: &[&str], home: &Path) -> Option<PathBuf> {
+    for candidate in candidates {
+        let path = home.join(candidate);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    candidates.first().map(|candidate| home.join(candidate))
+}
+
+fn expand_profile_path(value: &str, home: &Path) -> PathBuf {
+    let trimmed = value.trim();
+    if trimmed.starts_with("~/") {
+        return home.join(trimmed.trim_start_matches("~/"));
+    }
+
+    let path = PathBuf::from(trimmed);
+    if path.is_relative() {
+        home.join(path)
+    } else {
+        path
+    }
+}
+
+fn push_unique_path(paths: &mut Vec<PathBuf>, seen: &mut HashSet<PathBuf>, path: PathBuf) {
+    if seen.insert(path.clone()) {
+        paths.push(path);
+    }
+}
+
+fn write_managed_block(profile: &Path, exports: &[String]) -> Result<()> {
+    ensure_parent_directory(profile)?;
+    let existing = if profile.exists() {
+        fs::read_to_string(profile)?
+    } else {
+        String::new()
+    };
+
+    let (mut base, _) = strip_managed_block(&existing);
+
+    if !base.is_empty() && !base.ends_with('\n') {
+        base.push('\n');
+    }
+    if !base.is_empty() && !base.ends_with("\n\n") {
+        base.push('\n');
+    }
+
+    let mut block_lines = Vec::with_capacity(exports.len() + 2);
+    block_lines.push(MANAGED_START.to_string());
+    block_lines.extend(exports.iter().cloned());
+    block_lines.push(MANAGED_END.to_string());
+    let block = block_lines.join("\n");
+
+    base.push_str(&block);
+    base.push('\n');
+
+    fs::write(profile, base)?;
+    Ok(())
+}
+
+fn remove_managed_block(profile: &Path) -> Result<()> {
+    if !profile.exists() {
+        return Ok(());
+    }
+
+    let existing = fs::read_to_string(profile)?;
+    let (updated, changed) = strip_managed_block(&existing);
+    if changed {
+        fs::write(profile, updated)?;
+    }
+
+    Ok(())
+}
+
+fn strip_managed_block(content: &str) -> (String, bool) {
+    let mut current = content.to_string();
+    let mut changed = false;
+
+    loop {
+        let Some(start_idx) = current.find(MANAGED_START) else {
+            break;
+        };
+
+        let Some(rel_end) = current[start_idx..].find(MANAGED_END) else {
+            break;
+        };
+
+        let end_idx = start_idx + rel_end + MANAGED_END.len();
+
+        let mut remove_start = start_idx;
+        while remove_start > 0 && matches!(current.as_bytes()[remove_start - 1], b'\n') {
+            remove_start -= 1;
+        }
+
+        let mut remove_end = end_idx;
+        while remove_end < current.len() && matches!(current.as_bytes()[remove_end], b'\n') {
+            remove_end += 1;
+        }
+
+        current.replace_range(remove_start..remove_end, "");
+        changed = true;
+    }
+
+    (current, changed)
+}
+
+fn ensure_parent_directory(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    Ok(())
 }

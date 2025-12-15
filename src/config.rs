@@ -33,6 +33,26 @@ impl Default for ProxySettings {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct ShellIntegration {
+    pub detect_shell: bool,
+    pub default_shell: Option<String>,
+    pub shells: Vec<String>,
+    pub profile_paths: Vec<String>,
+}
+
+impl Default for ShellIntegration {
+    fn default() -> Self {
+        Self {
+            detect_shell: true,
+            default_shell: None,
+            shells: Vec::new(),
+            profile_paths: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AppConfig {
     pub default_hosts_file: Option<String>,
     #[serde(default, deserialize_with = "deserialize_no_proxy")]
@@ -42,6 +62,8 @@ pub struct AppConfig {
     pub wpad_url: Option<String>,
     #[serde(default)]
     pub proxy_settings: ProxySettings,
+    #[serde(default)]
+    pub shell_integration: ShellIntegration,
 }
 
 #[derive(Debug, Clone)]
@@ -86,27 +108,29 @@ impl Default for AppConfig {
             enable_wpad_discovery: Some(true),
             wpad_url: Some(defaults::default_wpad_url()),
             proxy_settings: ProxySettings::default(),
+            shell_integration: ShellIntegration::default(),
         }
     }
 }
 
 pub fn get_config_dir() -> Result<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
     if let Some(xdg_config) = env::var_os("XDG_CONFIG_HOME") {
-        let path = PathBuf::from(xdg_config).join("proxyctl-rs");
-        fs::create_dir_all(&path)?;
-        return Ok(path);
+        candidates.push(PathBuf::from(xdg_config));
     }
 
     if let Some(home_dir) = dirs::home_dir() {
-        let path = home_dir.join(".config").join("proxyctl-rs");
-        fs::create_dir_all(&path)?;
-        return Ok(path);
+        candidates.push(home_dir.join(".config"));
     }
 
-    if let Some(config_dir) = dirs::config_dir() {
-        let path = config_dir.join("proxyctl-rs");
-        fs::create_dir_all(&path)?;
-        return Ok(path);
+    candidates.extend(dirs::config_dir());
+
+    for base in candidates {
+        let path = base.join("proxyctl-rs");
+        if fs::create_dir_all(&path).is_ok() {
+            return Ok(path);
+        }
     }
 
     Err(anyhow!("Could not find config directory"))
@@ -185,6 +209,13 @@ pub fn get_proxy_settings() -> Result<ProxySettings> {
     match load_config() {
         Ok(config) => Ok(config.proxy_settings),
         Err(_) => Ok(ProxySettings::default()),
+    }
+}
+
+pub fn get_shell_integration() -> Result<ShellIntegration> {
+    match load_config() {
+        Ok(config) => Ok(config.shell_integration),
+        Err(_) => Ok(ShellIntegration::default()),
     }
 }
 
@@ -322,6 +353,38 @@ pub fn describe_config_options() -> Result<Vec<ConfigOptionDescriptor>> {
         description: "Control whether the NO_PROXY environment variable is managed",
         default: default_config.proxy_settings.enable_no_proxy.to_string(),
         current: current_config.proxy_settings.enable_no_proxy.to_string(),
+    });
+
+    options.push(ConfigOptionDescriptor {
+        key: "shell_integration.detect_shell",
+        value_type: "bool",
+        description: "Automatically detect the active shell from the SHELL environment variable",
+        default: default_config.shell_integration.detect_shell.to_string(),
+        current: current_config.shell_integration.detect_shell.to_string(),
+    });
+
+    options.push(ConfigOptionDescriptor {
+        key: "shell_integration.default_shell",
+        value_type: "string",
+        description: "Shell name to fall back to when detection is disabled or unavailable",
+        default: clone_or_none(default_config.shell_integration.default_shell.as_ref()),
+        current: clone_or_none(current_config.shell_integration.default_shell.as_ref()),
+    });
+
+    options.push(ConfigOptionDescriptor {
+        key: "shell_integration.shells",
+        value_type: "list<string>",
+        description: "Additional shell names to manage (e.g., 'zsh', 'bash')",
+        default: join_list(Some(&default_config.shell_integration.shells)),
+        current: join_list(Some(&current_config.shell_integration.shells)),
+    });
+
+    options.push(ConfigOptionDescriptor {
+        key: "shell_integration.profile_paths",
+        value_type: "list<string>",
+        description: "Explicit profile paths to manage regardless of detected shells",
+        default: join_list(Some(&default_config.shell_integration.profile_paths)),
+        current: join_list(Some(&current_config.shell_integration.profile_paths)),
     });
 
     Ok(options)
