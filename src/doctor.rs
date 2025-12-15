@@ -167,6 +167,8 @@ fn collect_snapshots(
 struct PendingComment {
     closing: char,
     comment: String,
+    kind: ValueKind,
+    item_kind: Option<ValueKind>,
 }
 
 struct RenderedLine {
@@ -213,16 +215,27 @@ fn highlight_toml_with_annotations(
         } else {
             let mut line_buf = String::new();
             line_buf.push_str(indent);
-            line_buf.push_str(trimmed);
+            let is_closing = pending_comments
+                .last()
+                .map(|pending| line_starts_with(trimmed, pending.closing))
+                .unwrap_or(false);
 
-            if let Some(pending) = pending_comments.last() {
-                if line_starts_with(trimmed, pending.closing) {
-                    if let Some(pending) = pending_comments.pop() {
-                        line_buf.push_str(&pending.comment);
-                    }
+            if is_closing {
+                if let Some(pending) = pending_comments.pop() {
+                    line_buf.push_str(&colorize_primary(trimmed, pending.kind).to_string());
+                    line_buf.push_str(&pending.comment);
+                } else {
+                    line_buf.push_str(trimmed);
                 }
+            } else if let Some(pending) = pending_comments.last() {
+                if let Some(item_kind) = pending.item_kind {
+                    line_buf.push_str(&colorize_primary(trimmed, item_kind).to_string());
+                } else {
+                    line_buf.push_str(trimmed);
+                }
+            } else {
+                line_buf.push_str(trimmed);
             }
-
             line_buf.push('\n');
             result.push_str(&line_buf);
         }
@@ -274,7 +287,12 @@ fn render_line(
             }
 
             if let Some(closing) = multiline_closing(kind, value_text) {
-                deferred = Some(PendingComment { closing, comment });
+                deferred = Some(PendingComment {
+                    closing,
+                    comment,
+                    kind,
+                    item_kind: infer_nested_kind(snapshot),
+                });
             } else {
                 line.push_str(&comment);
             }
@@ -300,6 +318,20 @@ fn multiline_closing(kind: ValueKind, value_text: &str) -> Option<char> {
 
 fn line_starts_with(line: &str, expected: char) -> bool {
     line.starts_with(expected)
+}
+
+fn infer_nested_kind(snapshot: &ValueSnapshot) -> Option<ValueKind> {
+    match snapshot.current {
+        JsonValue::Array(ref items) => items
+            .iter()
+            .find_map(|item| match value_kind(item) {
+                ValueKind::Null => None,
+                kind => Some(kind),
+            })
+            .or(Some(ValueKind::Null)),
+        JsonValue::Object(_) => Some(ValueKind::Object),
+        _ => None,
+    }
 }
 
 fn parse_table_path(line: &str) -> Option<Vec<String>> {
