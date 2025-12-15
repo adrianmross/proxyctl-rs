@@ -154,19 +154,6 @@ dev.example.com
 
 The tool modifies `~/.ssh/config` to add proxy commands for configured hosts.
 
-## Environment Configuration
-
-For custom deployments, you can override default values using environment variables. Create a `.env` file in the project root (not committed to VCS) based on the provided `.env.example`:
-
-```bash
-# Default domains to exclude from proxy (comma-separated)
-DEFAULT_NO_PROXY=localhost,127.0.0.1,.local
-
-# Default WPAD URL for proxy discovery
-DEFAULT_WPAD_URL=http://wpad.company.com/wpad.dat
-```
-
-The tool automatically loads `.env` files if present, allowing you to customize defaults without modifying the code.
 
 ## Development
 
@@ -190,6 +177,18 @@ cargo test
 
 ```bash
 cargo run -- <args>
+```
+
+### Environment Configuration
+
+You can override default values using environment variables for testing the detection features without zero custom configuration. Create a `.env` file in the project root based on the provided `.env.example`:
+
+```bash
+# Default domains to exclude from proxy (comma-separated)
+DEFAULT_NO_PROXY=localhost,127.0.0.1,.local
+
+# Default WPAD URL for proxy discovery
+DEFAULT_WPAD_URL=http://wpad.company.com/wpad.dat
 ```
 
 ## Releasing
