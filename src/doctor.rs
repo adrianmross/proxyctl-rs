@@ -32,25 +32,57 @@ async fn evaluate() -> Result<DoctorSummary> {
     let mut healthy = true;
 
     match check_config() {
-        Ok(message) => lines.push(format!("Config: OK - {message}")),
+        Ok(message) => lines.push(format!(
+            "{}: {} - {message}",
+            "Config".bold(),
+            "OK".green()
+        )),
         Err(err) => {
-            lines.push(format!("Config: ERR - {err}"));
+            lines.push(format!(
+                "{}: {} - {err}",
+                "Config".bold(),
+                "ERR".red()
+            ));
             healthy = false;
         }
     }
 
     match check_database().await {
-        Ok(message) => lines.push(format!("Database: OK - {message}")),
+        Ok(message) => lines.push(format!(
+            "{}: {} - {message}",
+            "Database".bold(),
+            "OK".green()
+        )),
         Err(err) => {
-            lines.push(format!("Database: ERR - {err}"));
+            lines.push(format!(
+                "{}: {} - {err}",
+                "Database".bold(),
+                "ERR".red()
+            ));
             healthy = false;
         }
     }
 
     if healthy {
-        lines.push("Doctor summary: all checks passed".to_string());
+        lines.push(
+            format!(
+                "{}: {} - all checks passed",
+                "Summary".bold(),
+                "OK".green()
+            )
+            .on_green()
+            .to_string(),
+        );
     } else {
-        lines.push("Doctor summary: issues detected".to_string());
+        lines.push(
+            format!(
+                "{}: {} - issues detected",
+                "Summary".bold(),
+                "ERR".red()
+            )
+            .on_red()
+            .to_string(),
+        );
     }
 
     Ok(DoctorSummary { lines, healthy })
