@@ -46,14 +46,20 @@ curl -fsSL https://raw.githubusercontent.com/adrianmross/proxyctl-rs/main/instal
 ## Usage
 
 ```bash
-# Enable proxy (will auto-detect if no URL provided)
+# Enable proxy and add SSH hosts (auto-detects if no URL provided)
 proxyctl-rs on
 
-# Enable proxy with specific URL
+# Enable proxy with specific URL and add SSH hosts
 proxyctl-rs on --proxy http://proxy.example.com:8080
 
-# Disable proxy
+# Disable proxy and remove SSH hosts
 proxyctl-rs off
+
+# Enable proxy only (without touching SSH)
+proxyctl-rs proxy on
+
+# Disable proxy only (without touching SSH)
+proxyctl-rs proxy off
 
 # Detect best regional proxy
 proxyctl-rs detect
@@ -67,20 +73,41 @@ proxyctl-rs ssh add --hosts-file /path/to/custom/hosts.txt
 # Remove SSH proxy hosts
 proxyctl-rs ssh remove
 
-# Show current proxy status
+# Show combined status
 proxyctl-rs status
+
+# Show only proxy status
+proxyctl-rs status proxy
+
+# Show only SSH status
+proxyctl-rs status ssh
+
+# Run diagnostic checks
+proxyctl-rs doctor run
+
+# Inspect configuration values
+proxyctl-rs doctor config
 ```
 
 ## Shell Integration
 
-The tool automatically integrates with your shell by modifying your shell profile (`.bashrc`, `.zshrc`, etc.).
+The tool automatically integrates with your shell by modifying your shell profile (`.zshenv`, `.bash_profile`, etc.).
 
-For bash compatibility (especially for jobs), you can target bash specifically:
+You can target a shell specifically:
 
 ```bash
-# The tool detects your shell automatically, but you can override
+# Detects shell automatically, but you can override
 export SHELL=/bin/bash
 proxyctl-rs on
+```
+
+Proxy entries in managed profiles are wrapped with:
+
+```bash
+### MANAGED BY PROXYCTL-RS START (DO NOT EDIT)
+export http_proxy="..."
+...
+### MANAGED BY PROXYCTL-RS END (DO NOT EDIT)
 ```
 
 ## Configuration
@@ -99,7 +126,7 @@ proxyctl-rs uses a configuration directory at `~/.config/proxyctl-rs/` (or equiv
 default_hosts_file = "hosts"
 
 # Custom no_proxy domains (overrides defaults completely)
-# Can be an array or space-delimited string
+# Can be an array or comma-delimited string
 no_proxy = ["example.com", "internal.domain"]
 
 # Enable/disable WPAD proxy discovery
@@ -114,6 +141,19 @@ enable_http_proxy = true
 enable_https_proxy = true
 enable_ftp_proxy = true
 enable_no_proxy = true
+
+[shell_integration]
+# autodetect the shell from $SHELL
+detect_shell = true
+
+# fallback when detection is disabled or missing
+default_shell = "bash"
+
+# manage additional shell profiles explicitly
+shells = ["bash", "zsh"]
+
+# optional paths to update
+profile_paths = ["~/.bash_profile", "~/.zshenv"]
 ```
 
 ### Example hosts.txt
@@ -129,19 +169,6 @@ dev.example.com
 
 The tool modifies `~/.ssh/config` to add proxy commands for configured hosts.
 
-## Environment Configuration
-
-For custom deployments, you can override default values using environment variables. Create a `.env` file in the project root (not committed to VCS) based on the provided `.env.example`:
-
-```bash
-# Default domains to exclude from proxy (comma-separated)
-DEFAULT_NO_PROXY=localhost,127.0.0.1,.local
-
-# Default WPAD URL for proxy discovery
-DEFAULT_WPAD_URL=http://wpad.company.com/wpad.dat
-```
-
-The tool automatically loads `.env` files if present, allowing you to customize defaults without modifying the code.
 
 ## Development
 
@@ -165,6 +192,18 @@ cargo test
 
 ```bash
 cargo run -- <args>
+```
+
+### Environment Configuration
+
+You can override default values using environment variables for testing the detection features without any custom configuration. Create a `.env` file in the project root based on the provided `.env.example`:
+
+```bash
+# Default domains to exclude from proxy (comma-separated)
+DEFAULT_NO_PROXY=localhost,127.0.0.1,.local
+
+# Default WPAD URL for proxy discovery
+DEFAULT_WPAD_URL=http://wpad.company.com/wpad.dat
 ```
 
 ## Releasing

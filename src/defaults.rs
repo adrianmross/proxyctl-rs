@@ -1,5 +1,3 @@
-/// Default configuration values for proxyctl-rs
-/// These can be changed here without modifying the main logic
 use std::env;
 
 /// Get default domains to exclude from proxy (comma-separated)
