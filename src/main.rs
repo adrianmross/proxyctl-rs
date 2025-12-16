@@ -19,14 +19,19 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Enable proxy configuration
+    /// Enable proxy configuration and add SSH hosts
     On {
         /// Proxy server URL (optional, will detect if not provided)
         #[arg(short, long)]
         proxy: Option<String>,
     },
-    /// Disable proxy configuration
+    /// Disable proxy configuration and remove SSH hosts
     Off,
+    /// Manage proxy configuration without touching SSH
+    Proxy {
+        #[command(subcommand)]
+        action: ProxyCommands,
+    },
     /// Detect and display the best regional proxy
     Detect,
     /// Manage SSH configuration for proxy hosts
@@ -55,6 +60,18 @@ enum SshCommands {
     Remove,
 }
 
+#[derive(Subcommand)]
+enum ProxyCommands {
+    /// Enable proxy configuration only
+    On {
+        /// Proxy server URL (optional, will detect if not provided)
+        #[arg(short, long)]
+        proxy: Option<String>,
+    },
+    /// Disable proxy configuration only
+    Off,
+}
+
 #[derive(Subcommand, Clone)]
 enum DoctorCommands {
     /// Run diagnostics for configuration and database
@@ -76,16 +93,25 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::On { proxy } => {
-            let resolved = proxy::resolve_proxy(proxy.as_deref()).await?;
-            proxy::set_proxy(&resolved.proxy_url).await?;
+            let resolved = configure_proxy(proxy.as_deref()).await?;
             let hosts_file = config::get_hosts_file_path()?.to_string_lossy().to_string();
             config::add_ssh_hosts(&hosts_file, &resolved.proxy_host)?;
-            println!("Proxy enabled");
+            println!("Proxy enabled and SSH hosts added");
         }
         Commands::Off => {
             proxy::disable_proxy().await?;
             config::remove_ssh_hosts()?;
-            println!("Proxy disabled");
+            println!("Proxy disabled and SSH hosts removed");
+        }
+        Commands::Proxy { action } => match action {
+            ProxyCommands::On { proxy } => {
+                configure_proxy(proxy.as_deref()).await?;
+                println!("Proxy enabled");
+            }
+            ProxyCommands::Off => {
+                proxy::disable_proxy().await?;
+                println!("Proxy disabled");
+            }
         }
         Commands::Detect => {
             let proxy = detect::detect_best_proxy().await?;
@@ -119,7 +145,13 @@ async fn main() -> Result<()> {
                 doctor::print_config()?;
             }
         },
-    }
+}
+
+async fn configure_proxy(proxy: Option<&str>) -> Result<proxy::ResolvedProxy> {
+    let resolved = proxy::resolve_proxy(proxy).await?;
+    proxy::set_proxy(&resolved.proxy_url).await?;
+    Ok(resolved)
+}
 
     Ok(())
 }

@@ -46,14 +46,20 @@ curl -fsSL https://raw.githubusercontent.com/adrianmross/proxyctl-rs/main/instal
 ## Usage
 
 ```bash
-# Enable proxy (will auto-detect if no URL provided)
+# Enable proxy and add SSH hosts (auto-detects if no URL provided)
 proxyctl-rs on
 
-# Enable proxy with specific URL
+# Enable proxy with specific URL and add SSH hosts
 proxyctl-rs on --proxy http://proxy.example.com:8080
 
-# Disable proxy
+# Disable proxy and remove SSH hosts
 proxyctl-rs off
+
+# Enable proxy only (without touching SSH)
+proxyctl-rs proxy on
+
+# Disable proxy only (without touching SSH)
+proxyctl-rs proxy off
 
 # Detect best regional proxy
 proxyctl-rs detect
