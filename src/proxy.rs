@@ -3,6 +3,7 @@ use crate::db;
 use crate::defaults;
 use crate::detect;
 use anyhow::{anyhow, Result};
+use colored::Colorize;
 use std::collections::HashSet;
 use std::env;
 use std::fs;
@@ -90,37 +91,61 @@ pub async fn get_status() -> Result<String> {
     let mut status_lines = Vec::new();
 
     if proxy_settings.enable_http_proxy {
-        let env_value = get_env_value(&HTTP_PROXY_KEYS);
-        let value = state.http_proxy.as_deref().or(env_value.as_deref());
-        status_lines.push(format!("HTTP Proxy: {}", value.unwrap_or("Not set")));
+        status_lines.push(render_status_line(
+            "HTTP Proxy",
+            state.http_proxy.as_deref(),
+            &HTTP_PROXY_KEYS,
+        ));
     }
     if proxy_settings.enable_https_proxy {
-        let env_value = get_env_value(&HTTPS_PROXY_KEYS);
-        let value = state.https_proxy.as_deref().or(env_value.as_deref());
-        status_lines.push(format!("HTTPS Proxy: {}", value.unwrap_or("Not set")));
+        status_lines.push(render_status_line(
+            "HTTPS Proxy",
+            state.https_proxy.as_deref(),
+            &HTTPS_PROXY_KEYS,
+        ));
     }
     if proxy_settings.enable_ftp_proxy {
-        let env_value = get_env_value(&FTP_PROXY_KEYS);
-        let value = state.ftp_proxy.as_deref().or(env_value.as_deref());
-        status_lines.push(format!("FTP Proxy: {}", value.unwrap_or("Not set")));
+        status_lines.push(render_status_line(
+            "FTP Proxy",
+            state.ftp_proxy.as_deref(),
+            &FTP_PROXY_KEYS,
+        ));
     }
     if proxy_settings.enable_all_proxy {
-        let env_value = get_env_value(&ALL_PROXY_KEYS);
-        let value = state.all_proxy.as_deref().or(env_value.as_deref());
-        status_lines.push(format!("All Proxy: {}", value.unwrap_or("Not set")));
+        status_lines.push(render_status_line(
+            "All Proxy",
+            state.all_proxy.as_deref(),
+            &ALL_PROXY_KEYS,
+        ));
     }
     if proxy_settings.enable_proxy_rsync {
-        let env_value = get_env_value(&PROXY_RSYNC_KEYS);
-        let value = state.proxy_rsync.as_deref().or(env_value.as_deref());
-        status_lines.push(format!("Proxy Rsync: {}", value.unwrap_or("Not set")));
+        status_lines.push(render_status_line(
+            "Proxy Rsync",
+            state.proxy_rsync.as_deref(),
+            &PROXY_RSYNC_KEYS,
+        ));
     }
     if proxy_settings.enable_no_proxy {
-        let env_value = get_env_value(&NO_PROXY_KEYS);
-        let value = state.no_proxy.as_deref().or(env_value.as_deref());
-        status_lines.push(format!("No Proxy: {}", value.unwrap_or("Not set")));
+        status_lines.push(render_status_line(
+            "No Proxy",
+            state.no_proxy.as_deref(),
+            &NO_PROXY_KEYS,
+        ));
     }
 
     Ok(status_lines.join("\n"))
+}
+
+fn render_status_line(label: &str, state_value: Option<&str>, keys: &[&str]) -> String {
+    let env_value = get_env_value(keys);
+    let value = state_value.or(env_value.as_deref());
+
+    let status = match value {
+        Some(v) if !v.is_empty() => v.green().bold().to_string(),
+        _ => "Not set".red().bold().to_string(),
+    };
+
+    format!("{}: {}", label.bold(), status)
 }
 
 #[derive(Debug, Clone)]
