@@ -196,7 +196,7 @@ cargo run -- <args>
 
 ### Environment Configuration
 
-You can override default values using environment variables for testing the detection features without zero custom configuration. Create a `.env` file in the project root based on the provided `.env.example`:
+You can override default values using environment variables for testing the detection features without any custom configuration. Create a `.env` file in the project root based on the provided `.env.example`:
 
 ```bash
 # Default domains to exclude from proxy (comma-separated)
