@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use colored::Colorize;
 
 mod config;
 mod db;
@@ -39,8 +40,11 @@ enum Commands {
         #[command(subcommand)]
         action: SshCommands,
     },
-    /// Show current proxy status
-    Status,
+    /// Show current status information
+    Status {
+        #[command(subcommand)]
+        action: Option<StatusCommands>,
+    },
     /// Run diagnostics or inspect configuration state
     Doctor {
         #[command(subcommand)]
@@ -80,6 +84,14 @@ enum DoctorCommands {
     Config,
 }
 
+#[derive(Subcommand, Clone)]
+enum StatusCommands {
+    /// Show only proxy status details
+    Proxy,
+    /// Show only SSH status details
+    Ssh,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load environment variables from .env file if it exists
@@ -112,7 +124,7 @@ async fn main() -> Result<()> {
                 proxy::disable_proxy().await?;
                 println!("Proxy disabled");
             }
-        }
+        },
         Commands::Detect => {
             let proxy = detect::detect_best_proxy().await?;
             println!("Best regional proxy: {proxy}");
@@ -133,10 +145,19 @@ async fn main() -> Result<()> {
                 println!("SSH hosts removed");
             }
         },
-        Commands::Status => {
-            let status = proxy::get_status().await?;
-            println!("{status}");
-        }
+        Commands::Status { action } => match action {
+            Some(StatusCommands::Proxy) => {
+                print_proxy_status().await?;
+            }
+            Some(StatusCommands::Ssh) => {
+                print_ssh_status()?;
+            }
+            None => {
+                print_proxy_status().await?;
+                println!();
+                print_ssh_status()?;
+            }
+        },
         Commands::Doctor { action } => match action.unwrap_or(DoctorCommands::Run) {
             DoctorCommands::Run => {
                 doctor::run().await?;
@@ -145,6 +166,9 @@ async fn main() -> Result<()> {
                 doctor::print_config()?;
             }
         },
+    }
+
+    Ok(())
 }
 
 async fn configure_proxy(proxy: Option<&str>) -> Result<proxy::ResolvedProxy> {
@@ -153,5 +177,80 @@ async fn configure_proxy(proxy: Option<&str>) -> Result<proxy::ResolvedProxy> {
     Ok(resolved)
 }
 
+async fn print_proxy_status() -> Result<()> {
+    let status = proxy::get_status().await?;
+    println!("{status}");
     Ok(())
+}
+
+fn print_ssh_status() -> Result<()> {
+    let status = config::get_ssh_status()?;
+    println!("{}", format_ssh_status(&status));
+    Ok(())
+}
+
+fn format_ssh_status(status: &config::SshStatus) -> String {
+    let mut lines = Vec::new();
+
+    let state_label = if !status.hosts_file_exists {
+        "Hosts file missing".red().bold().to_string()
+    } else if !status.config_exists {
+        "SSH config missing".red().bold().to_string()
+    } else if status.hosts.is_empty() {
+        "No hosts configured".yellow().bold().to_string()
+    } else if status.missing_hosts.is_empty() {
+        "Configured".green().bold().to_string()
+    } else {
+        "Partially configured".yellow().bold().to_string()
+    };
+
+    lines.push(format!("{}: {}", "SSH Config".bold(), state_label));
+    lines.push(format!(
+        "Config file: {}{}",
+        status.config_path.display(),
+        if status.config_exists {
+            ""
+        } else {
+            " (missing)"
+        }
+    ));
+    lines.push(format!(
+        "Hosts file: {}{}",
+        status.hosts_path.display(),
+        if status.hosts_file_exists {
+            ""
+        } else {
+            " (missing)"
+        }
+    ));
+
+    if status.hosts_file_exists {
+        if status.hosts.is_empty() {
+            lines.push("No hosts listed in hosts file".to_string());
+        } else {
+            lines.push(format!("Tracked hosts ({}):", status.hosts.len()));
+            for host in &status.hosts {
+                let indicator = if status
+                    .configured_hosts
+                    .iter()
+                    .any(|configured| configured.eq_ignore_ascii_case(host))
+                {
+                    "✓".green().to_string()
+                } else {
+                    "✗".red().to_string()
+                };
+                lines.push(format!("  {indicator} {host}"));
+            }
+        }
+
+        if !status.missing_hosts.is_empty() {
+            lines.push(String::new());
+            lines.push(format!(
+                "Missing hosts: {}",
+                status.missing_hosts.join(", ")
+            ));
+        }
+    }
+
+    lines.join("\n")
 }

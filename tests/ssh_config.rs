@@ -71,6 +71,10 @@ impl SshFixture {
         &self.hosts_path
     }
 
+    fn config_path(&self) -> &Path {
+        &self.ssh_config_path
+    }
+
     fn read_config(&self) -> String {
         fs::read_to_string(&self.ssh_config_path).expect("read ssh config")
     }
@@ -222,4 +226,59 @@ fn ssh_add_errors_on_conflicting_host_block_overrides() {
 
     let updated = fixture.read_config();
     assert!(!updated.contains("ProxyCommand"));
+}
+
+#[test]
+fn ssh_status_reports_missing_hosts_file() {
+    let fixture = SshFixture::new("", "");
+    fs::remove_file(fixture.hosts_path()).expect("remove hosts file");
+
+    let status = config::get_ssh_status().expect("status");
+
+    assert_eq!(status.config_path, fixture.config_path());
+    assert!(status.config_exists);
+    assert_eq!(status.hosts_path, fixture.hosts_path());
+    assert!(!status.hosts_file_exists);
+    assert!(status.hosts.is_empty());
+    assert!(status.configured_hosts.is_empty());
+    assert!(status.missing_hosts.is_empty());
+}
+
+#[test]
+fn ssh_status_reports_missing_config_file() {
+    let fixture = SshFixture::new(
+        "host1.example.com\n",
+        "Host host1.example.com\n    User alice\n",
+    );
+    fs::remove_file(fixture.config_path()).expect("remove ssh config");
+
+    let status = config::get_ssh_status().expect("status");
+
+    assert_eq!(status.config_path, fixture.config_path());
+    assert!(!status.config_exists);
+    assert_eq!(status.hosts_path, fixture.hosts_path());
+    assert!(status.hosts_file_exists);
+}
+
+#[test]
+fn ssh_status_identifies_missing_hosts() {
+    let proxy_host = "proxy.example.com:8080";
+    let fixture = SshFixture::new(
+        "host1.example.com\nhost2.example.com\n",
+        "Host host1.example.com\n    User alice\n",
+    );
+
+    config::add_ssh_hosts(fixture.hosts_path().to_string_lossy().as_ref(), proxy_host)
+        .expect("add hosts");
+
+    let status = config::get_ssh_status().expect("status");
+
+    assert!(status.config_exists);
+    assert!(status.hosts_file_exists);
+    assert_eq!(status.hosts, vec!["host1.example.com", "host2.example.com"]);
+    assert!(status
+        .configured_hosts
+        .iter()
+        .any(|host| host.eq_ignore_ascii_case("host1.example.com")));
+    assert_eq!(status.missing_hosts, vec!["host2.example.com".to_string()]);
 }

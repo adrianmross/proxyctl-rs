@@ -8,6 +8,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+#[derive(Debug, Clone)]
+pub struct SshStatus {
+    pub config_path: PathBuf,
+    pub config_exists: bool,
+    pub hosts_path: PathBuf,
+    pub hosts_file_exists: bool,
+    pub hosts: Vec<String>,
+    pub configured_hosts: Vec<String>,
+    pub missing_hosts: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct ProxySettings {
@@ -177,6 +188,48 @@ pub fn get_hosts_file_path() -> Result<PathBuf> {
         .default_hosts_file
         .unwrap_or_else(|| "hosts.txt".to_string());
     Ok(config_dir.join(hosts_file))
+}
+
+pub fn get_ssh_status() -> Result<SshStatus> {
+    let config_path = get_ssh_config_path()?;
+    let config_exists = config_path.exists();
+
+    let hosts_path = get_hosts_file_path()?;
+    let hosts_file_exists = hosts_path.exists();
+
+    let host_entries = read_hosts_from_file(&hosts_path)?;
+    let hosts: Vec<String> = host_entries
+        .iter()
+        .map(|entry| entry.pattern.clone())
+        .collect();
+
+    let configured_hosts = if config_exists {
+        let contents = fs::read_to_string(&config_path)?;
+        collect_configured_hosts(&contents)
+    } else {
+        Vec::new()
+    };
+
+    let configured_lookup: HashSet<String> = configured_hosts
+        .iter()
+        .map(|host| host.to_ascii_lowercase())
+        .collect();
+
+    let missing_hosts = hosts
+        .iter()
+        .filter(|pattern| !configured_lookup.contains(&pattern.to_ascii_lowercase()))
+        .cloned()
+        .collect();
+
+    Ok(SshStatus {
+        config_path,
+        config_exists,
+        hosts_path,
+        hosts_file_exists,
+        hosts,
+        configured_hosts,
+        missing_hosts,
+    })
 }
 
 pub fn get_custom_no_proxy() -> Result<Option<Vec<String>>> {
@@ -565,7 +618,17 @@ fn collect_lines(content: String) -> Vec<String> {
     }
 }
 
-fn get_ssh_config_path() -> Result<std::path::PathBuf> {
+pub fn collect_configured_hosts(contents: &str) -> Vec<String> {
+    let mut hosts = Vec::new();
+    for line in contents.lines() {
+        if is_host_line(line) {
+            hosts.extend(host_patterns_from_line(line));
+        }
+    }
+    hosts
+}
+
+pub fn get_ssh_config_path() -> Result<std::path::PathBuf> {
     if let Some(home) = env::var_os("HOME") {
         return Ok(PathBuf::from(home).join(".ssh").join("config"));
     }

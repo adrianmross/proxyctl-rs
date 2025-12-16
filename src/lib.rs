@@ -4,3 +4,6 @@ pub mod defaults;
 pub mod detect;
 pub mod doctor;
 pub mod proxy;
+pub use config::collect_configured_hosts;
+pub use config::get_ssh_status;
+pub use config::SshStatus;

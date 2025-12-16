@@ -73,8 +73,14 @@ proxyctl-rs ssh add --hosts-file /path/to/custom/hosts.txt
 # Remove SSH proxy hosts
 proxyctl-rs ssh remove
 
-# Show current proxy status
+# Show combined status
 proxyctl-rs status
+
+# Show only proxy status
+proxyctl-rs status proxy
+
+# Show only SSH status
+proxyctl-rs status ssh
 
 # Run diagnostic checks
 proxyctl-rs doctor run
