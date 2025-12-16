@@ -3,8 +3,8 @@ use anyhow::{anyhow, Context, Result};
 use colored::{ColoredString, Colorize};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::collections::{BTreeMap, HashSet};
+use std::path::{Path, PathBuf};
 use toml::{map::Map as TomlMap, to_string_pretty, Value as TomlValue};
 
 struct DoctorSummary {
@@ -88,22 +88,102 @@ async fn check_database() -> Result<String> {
 }
 
 pub fn print_config() -> Result<()> {
-    let current = config::load_config()?;
+    let config_dir = config::get_config_dir()?;
+    let config_file = config_dir.join("config.toml");
+    let current = load_config_or_default(&config_file)?;
     let default = config::AppConfig::default();
 
-    let annotated = annotate_config_toml(&default, &current)?;
+    let configured_paths = gather_active_paths(&current)?;
+
+    let merged = merge_with_defaults(&default, &current)?;
+    let annotated = annotate_config_toml(&default, &merged, &configured_paths)?;
 
     println!("{}\n{}", "Configuration".bold(), annotated);
 
     Ok(())
 }
 
+fn load_config_or_default(path: &Path) -> Result<config::AppConfig> {
+    if path.exists() {
+        config::load_config()
+    } else {
+        Ok(config::AppConfig::default())
+    }
+}
+
+fn merge_with_defaults(
+    default: &config::AppConfig,
+    current: &config::AppConfig,
+) -> Result<config::AppConfig> {
+    let mut merged = serde_json::to_value(default)?;
+    let current_json = serde_json::to_value(current)?;
+    deep_merge(&mut merged, &current_json);
+    Ok(serde_json::from_value(merged)?)
+}
+
+fn deep_merge(target: &mut JsonValue, source: &JsonValue) {
+    match (target, source) {
+        (JsonValue::Object(target_map), JsonValue::Object(source_map)) => {
+            for (key, source_value) in source_map {
+                if let Some(target_value) = target_map.get_mut(key) {
+                    deep_merge(target_value, source_value);
+                } else {
+                    target_map.insert(key.clone(), source_value.clone());
+                }
+            }
+        }
+        (target_slot, source_value) => {
+            *target_slot = source_value.clone();
+        }
+    }
+}
+
+fn gather_active_paths(config: &config::AppConfig) -> Result<HashSet<Vec<String>>> {
+    let json = serde_json::to_value(config)?;
+    let mut paths = HashSet::new();
+    let mut cursor = Vec::new();
+    collect_active_paths(&mut cursor, &json, &mut paths);
+    Ok(paths)
+}
+
+fn collect_active_paths(
+    path: &mut Vec<String>,
+    value: &JsonValue,
+    paths: &mut HashSet<Vec<String>>,
+) {
+    match value {
+        JsonValue::Object(map) => {
+            for (key, child) in map {
+                path.push(key.clone());
+                collect_active_paths(path, child, paths);
+                path.pop();
+            }
+        }
+        JsonValue::Array(items) => {
+            if !path.is_empty() {
+                paths.insert(path.clone());
+            }
+
+            for item in items {
+                collect_active_paths(path, item, paths);
+            }
+        }
+        JsonValue::Null => {}
+        _ => {
+            if !path.is_empty() {
+                paths.insert(path.clone());
+            }
+        }
+    }
+}
+
 fn annotate_config_toml(
     default: &config::AppConfig,
     current: &config::AppConfig,
+    configured_paths: &HashSet<Vec<String>>,
 ) -> Result<String> {
     let annotations = build_annotation_map(default, current)?;
-    highlight_toml_with_annotations(current, &annotations)
+    highlight_toml_with_annotations(current, &annotations, configured_paths)
 }
 
 fn build_annotation_map<T>(default: &T, current: &T) -> Result<BTreeMap<Vec<String>, ValueSnapshot>>
@@ -169,6 +249,7 @@ struct PendingComment {
     comment: String,
     kind: ValueKind,
     item_kind: Option<ValueKind>,
+    configured: bool,
 }
 
 struct RenderedLine {
@@ -179,6 +260,7 @@ struct RenderedLine {
 fn highlight_toml_with_annotations(
     current: &config::AppConfig,
     annotations: &BTreeMap<Vec<String>, ValueSnapshot>,
+    configured_paths: &HashSet<Vec<String>>,
 ) -> Result<String> {
     let toml_string = to_string_pretty(current)?;
     let mut result = String::new();
@@ -207,7 +289,13 @@ fn highlight_toml_with_annotations(
             let value_text = value_part.trim();
             let mut full_path = table_path.clone();
             full_path.push(key.to_string());
-            let rendered = render_line(indent, key, value_text, annotations.get(&full_path));
+            let rendered = render_line(
+                indent,
+                key,
+                value_text,
+                annotations.get(&full_path),
+                configured_paths.contains(&full_path),
+            );
             result.push_str(&rendered.text);
             if let Some(deferred) = rendered.deferred {
                 pending_comments.push(deferred);
@@ -222,14 +310,22 @@ fn highlight_toml_with_annotations(
 
             if is_closing {
                 if let Some(pending) = pending_comments.pop() {
-                    line_buf.push_str(&colorize_primary(trimmed, pending.kind).to_string());
+                    let mut closing_repr = colorize_primary(trimmed, pending.kind);
+                    if !pending.configured {
+                        closing_repr = closing_repr.dimmed();
+                    }
+                    line_buf.push_str(&closing_repr.to_string());
                     line_buf.push_str(&pending.comment);
                 } else {
                     line_buf.push_str(trimmed);
                 }
             } else if let Some(pending) = pending_comments.last() {
                 if let Some(item_kind) = pending.item_kind {
-                    line_buf.push_str(&colorize_primary(trimmed, item_kind).to_string());
+                    let mut body_repr = colorize_primary(trimmed, item_kind);
+                    if !pending.configured {
+                        body_repr = body_repr.dimmed();
+                    }
+                    line_buf.push_str(&body_repr.to_string());
                 } else {
                     line_buf.push_str(trimmed);
                 }
@@ -249,17 +345,26 @@ fn render_line(
     key: &str,
     value_text: &str,
     annotation: Option<&ValueSnapshot>,
+    is_configured: bool,
 ) -> RenderedLine {
     let mut line = String::new();
     line.push_str(indent);
-    line.push_str(&key.bold().to_string());
+    let mut key_repr = key.bold();
+    if !is_configured {
+        key_repr = key_repr.dimmed();
+    }
+    line.push_str(&key_repr.to_string());
     line.push_str(" = ");
 
     let mut deferred = None;
 
     if let Some(snapshot) = annotation {
         let kind = value_kind(&snapshot.current);
-        line.push_str(&colorize_primary(value_text, kind).to_string());
+        let mut value_repr = colorize_primary(value_text, kind);
+        if !is_configured {
+            value_repr = value_repr.dimmed();
+        }
+        line.push_str(&value_repr.to_string());
 
         let type_sample = select_type_sample(&snapshot.default, &snapshot.current);
         let type_label = format!("({})", describe_type(type_sample));
@@ -292,13 +397,18 @@ fn render_line(
                     comment,
                     kind,
                     item_kind: infer_nested_kind(snapshot),
+                    configured: is_configured,
                 });
             } else {
                 line.push_str(&comment);
             }
         }
     } else {
-        line.push_str(&colorize_literal(value_text).to_string());
+        let mut value_repr = colorize_literal(value_text);
+        if !is_configured {
+            value_repr = value_repr.dimmed();
+        }
+        line.push_str(&value_repr.to_string());
     }
 
     line.push('\n');
