@@ -4,6 +4,7 @@ use colored::{ColoredString, Colorize};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, HashSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 use toml::{map::Map as TomlMap, to_string_pretty, Value as TomlValue};
 
@@ -93,14 +94,71 @@ pub fn print_config() -> Result<()> {
     let current = load_config_or_default(&config_file)?;
     let default = config::AppConfig::default();
 
-    let configured_paths = gather_active_paths(&current)?;
-
     let merged = merge_with_defaults(&default, &current)?;
+    let configured_paths = gather_configured_paths(&config_file)?;
     let annotated = annotate_config_toml(&default, &merged, &configured_paths)?;
 
     println!("{}\n{}", "Configuration".bold(), annotated);
 
     Ok(())
+}
+
+fn gather_configured_paths(config_file: &Path) -> Result<HashSet<Vec<String>>> {
+    if !config_file.exists() {
+        return Ok(HashSet::new());
+    }
+
+    let contents = fs::read_to_string(config_file)?;
+    if contents.trim().is_empty() {
+        return Ok(HashSet::new());
+    }
+
+    let parsed: TomlValue = toml::from_str(&contents)?;
+    let mut paths = HashSet::new();
+
+    if let TomlValue::Table(table) = parsed {
+        for (key, value) in table {
+            let mut current_path = vec![key];
+            collect_configured_paths(&mut current_path, value, &mut paths);
+        }
+    }
+
+    Ok(paths)
+}
+
+fn collect_configured_paths(
+    current_path: &mut Vec<String>,
+    value: TomlValue,
+    paths: &mut HashSet<Vec<String>>,
+) {
+    match value {
+        TomlValue::Table(map) => {
+            if !current_path.is_empty() {
+                paths.insert(current_path.clone());
+            }
+            for (child_key, child_value) in map {
+                current_path.push(child_key);
+                collect_configured_paths(current_path, child_value, paths);
+                current_path.pop();
+            }
+        }
+        TomlValue::Array(items) => {
+            if !current_path.is_empty() {
+                paths.insert(current_path.clone());
+            }
+            for item in items {
+                if let TomlValue::Table(_) = item {
+                    // Array of tables: recurse to capture nested fields.
+                    collect_configured_paths(current_path, item, paths);
+                }
+            }
+        }
+        _ => {
+            if !current_path.is_empty() {
+                paths.insert(current_path.clone());
+            }
+        }
+    }
 }
 
 fn load_config_or_default(path: &Path) -> Result<config::AppConfig> {
@@ -134,45 +192,6 @@ fn deep_merge(target: &mut JsonValue, source: &JsonValue) {
         }
         (target_slot, source_value) => {
             *target_slot = source_value.clone();
-        }
-    }
-}
-
-fn gather_active_paths(config: &config::AppConfig) -> Result<HashSet<Vec<String>>> {
-    let json = serde_json::to_value(config)?;
-    let mut paths = HashSet::new();
-    let mut cursor = Vec::new();
-    collect_active_paths(&mut cursor, &json, &mut paths);
-    Ok(paths)
-}
-
-fn collect_active_paths(
-    path: &mut Vec<String>,
-    value: &JsonValue,
-    paths: &mut HashSet<Vec<String>>,
-) {
-    match value {
-        JsonValue::Object(map) => {
-            for (key, child) in map {
-                path.push(key.clone());
-                collect_active_paths(path, child, paths);
-                path.pop();
-            }
-        }
-        JsonValue::Array(items) => {
-            if !path.is_empty() {
-                paths.insert(path.clone());
-            }
-
-            for item in items {
-                collect_active_paths(path, item, paths);
-            }
-        }
-        JsonValue::Null => {}
-        _ => {
-            if !path.is_empty() {
-                paths.insert(path.clone());
-            }
         }
     }
 }
