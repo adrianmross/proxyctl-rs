@@ -51,6 +51,11 @@ enum Commands {
         #[command(subcommand)]
         action: Option<DoctorCommands>,
     },
+    /// Manually manage npmrc profiles
+    Npmrc {
+        #[command(subcommand)]
+        action: NpmrcCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -74,6 +79,14 @@ enum ProxyCommands {
         proxy: Option<String>,
     },
     /// Disable proxy configuration only
+    Off,
+}
+
+#[derive(Subcommand, Clone)]
+enum NpmrcCommands {
+    /// Activate the configured proxy npmrc profile
+    On,
+    /// Restore the configured default npmrc profile
     Off,
 }
 
@@ -107,13 +120,18 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::On { proxy } => {
             let resolved = configure_proxy(proxy.as_deref()).await?;
+            if npmrc::is_enabled()? {
+                npmrc::activate_proxy_profile()?;
+            }
             let hosts_file = config::get_hosts_file_path()?.to_string_lossy().to_string();
             config::add_ssh_hosts(&hosts_file, &resolved.proxy_host)?;
             println!("Proxy enabled and SSH hosts added");
         }
         Commands::Off => {
             proxy::disable_proxy().await?;
-            npmrc::restore_default_profile()?;
+            if npmrc::is_enabled()? {
+                npmrc::restore_default_profile()?;
+            }
             config::remove_ssh_hosts()?;
             println!("Proxy disabled and SSH hosts removed");
         }
@@ -124,7 +142,6 @@ async fn main() -> Result<()> {
             }
             ProxyCommands::Off => {
                 proxy::disable_proxy().await?;
-                npmrc::restore_default_profile()?;
                 println!("Proxy disabled");
             }
         },
@@ -169,6 +186,14 @@ async fn main() -> Result<()> {
                 doctor::print_config()?;
             }
         },
+        Commands::Npmrc { action } => match action {
+            NpmrcCommands::On => {
+                npmrc::activate_proxy_profile()?;
+            }
+            NpmrcCommands::Off => {
+                npmrc::restore_default_profile()?;
+            }
+        },
     }
 
     Ok(())
@@ -177,7 +202,6 @@ async fn main() -> Result<()> {
 async fn configure_proxy(proxy: Option<&str>) -> Result<proxy::ResolvedProxy> {
     let resolved = proxy::resolve_proxy(proxy).await?;
     proxy::set_proxy(&resolved.proxy_url).await?;
-    npmrc::activate_proxy_profile()?;
     Ok(resolved)
 }
 

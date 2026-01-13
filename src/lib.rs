@@ -5,7 +5,6 @@ pub mod detect;
 pub mod doctor;
 pub mod npmrc;
 pub mod proxy;
-pub use crate::npmrc::{activate_proxy_profile, restore_default_profile};
 pub use config::collect_configured_hosts;
 pub use config::get_ssh_status;
 pub use config::SshStatus;

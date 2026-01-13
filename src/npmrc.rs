@@ -4,6 +4,10 @@ use std::path::{Path, PathBuf};
 
 use crate::config;
 
+pub fn is_enabled() -> Result<bool> {
+    Ok(config::get_npmrc_settings()?.enabled)
+}
+
 pub fn activate_proxy_profile() -> Result<()> {
     let settings = config::get_npmrc_settings()?;
     if !settings.enabled {

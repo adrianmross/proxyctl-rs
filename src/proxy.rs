@@ -2,7 +2,6 @@ use crate::config;
 use crate::db;
 use crate::defaults;
 use crate::detect;
-use crate::npmrc;
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 use std::collections::HashSet;
@@ -65,7 +64,6 @@ pub async fn set_proxy(proxy_url: &str) -> Result<()> {
         state.no_proxy = Some(no_proxy_str);
     }
     save_env_state(&state).await?;
-    npmrc::activate_proxy_profile()?;
 
     Ok(())
 }
@@ -80,7 +78,6 @@ pub async fn disable_proxy() -> Result<()> {
 
     remove_persisted_settings()?;
     save_env_state(&db::EnvState::default()).await?;
-    npmrc::restore_default_profile()?;
 
     Ok(())
 }

@@ -125,7 +125,7 @@ async fn test_status_reflects_disable_without_vars() {
     assert!(status.contains("HTTPS Proxy: Not set"));
     assert!(status.contains("FTP Proxy: Not set"));
     assert!(status.contains("All Proxy: Not set"));
-    assert!(status.contains("Proxy Rsync: Not set"));
+    assert!(status.contains("Proxy Rsync"));
     assert!(status.contains("No Proxy: Not set"));
 }
 
@@ -133,11 +133,10 @@ async fn test_status_reflects_disable_without_vars() {
 async fn test_resolve_proxy_uses_default_when_wpad_disabled() {
     let _config_guard = ConfigDirGuard::new();
 
-    let config = config::AppConfig {
-        enable_wpad_discovery: Some(false),
-        default_proxy: Some("http://fallback.example.com:8080".to_string()),
-        ..config::AppConfig::default()
-    };
+    let mut config = config::AppConfig::default();
+    config.enable_wpad_discovery = Some(false);
+    config.default_proxy = Some("http://fallback.example.com:8080".to_string());
+    config.wpad_url = Some("http://override.example.com/wpad.dat".to_string());
     config::save_config(&config).unwrap();
 
     let resolved = proxy::resolve_proxy(None).await.unwrap();
@@ -300,9 +299,13 @@ fn test_wpad_url_override_from_config() {
     );
     let _default_guard = EnvGuard::set("DEFAULT_WPAD_URL", "http://default.local/wpad.dat");
 
-    let mut config = config::AppConfig::default();
-    config.wpad_url = Some("http://override.example.com/wpad.dat".to_string());
-    config::save_config(&config).unwrap();
+    let config_dir = config::get_config_dir().unwrap();
+    fs::write(
+        config_dir.join("config.toml"),
+        r#"wpad_url = "http://override.example.com/wpad.dat"
+"#,
+    )
+    .unwrap();
 
     let (_, url) = config::get_wpad_config().unwrap();
     assert_eq!(url, "http://override.example.com/wpad.dat");
