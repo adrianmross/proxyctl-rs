@@ -125,7 +125,7 @@ async fn test_status_reflects_disable_without_vars() {
     assert!(status.contains("HTTPS Proxy: Not set"));
     assert!(status.contains("FTP Proxy: Not set"));
     assert!(status.contains("All Proxy: Not set"));
-    assert!(status.contains("Proxy Rsync"));
+    assert!(status.contains("Proxy Rsync:"));
     assert!(status.contains("No Proxy: Not set"));
 }
 
@@ -299,10 +299,12 @@ fn test_wpad_url_override_from_config() {
     );
     let _default_guard = EnvGuard::set("DEFAULT_WPAD_URL", "http://default.local/wpad.dat");
 
+
     let config_dir = config::get_config_dir().unwrap();
     fs::write(
         config_dir.join("config.toml"),
         r#"wpad_url = "http://override.example.com/wpad.dat"
+
 "#,
     )
     .unwrap();

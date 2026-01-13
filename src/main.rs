@@ -51,10 +51,10 @@ enum Commands {
         #[command(subcommand)]
         action: Option<DoctorCommands>,
     },
-    /// Manually manage npmrc profiles
-    Npmrc {
+    /// Manage language and tooling mirrors
+    Mirrors {
         #[command(subcommand)]
-        action: NpmrcCommands,
+        target: MirrorCommands,
     },
 }
 
@@ -80,6 +80,15 @@ enum ProxyCommands {
     },
     /// Disable proxy configuration only
     Off,
+}
+
+#[derive(Subcommand, Clone)]
+enum MirrorCommands {
+    /// Manage npmrc profiles
+    Npmrc {
+        #[command(subcommand)]
+        action: NpmrcCommands,
+    },
 }
 
 #[derive(Subcommand, Clone)]
@@ -186,13 +195,15 @@ async fn main() -> Result<()> {
                 doctor::print_config()?;
             }
         },
-        Commands::Npmrc { action } => match action {
-            NpmrcCommands::On => {
-                npmrc::activate_proxy_profile()?;
-            }
-            NpmrcCommands::Off => {
-                npmrc::restore_default_profile()?;
-            }
+        Commands::Mirrors { target } => match target {
+            MirrorCommands::Npmrc { action } => match action {
+                NpmrcCommands::On => {
+                    npmrc::activate_proxy_profile()?;
+                }
+                NpmrcCommands::Off => {
+                    npmrc::restore_default_profile()?;
+                }
+            },
         },
     }
 
