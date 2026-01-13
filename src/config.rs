@@ -64,6 +64,28 @@ impl Default for ShellIntegration {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct NpmrcSettings {
+    pub enabled: bool,
+    pub directory: Option<String>,
+    pub active_path: Option<String>,
+    pub default_profile: Option<String>,
+    pub proxy_profile: Option<String>,
+}
+
+impl Default for NpmrcSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            directory: Some("~/.npmrcs".to_string()),
+            active_path: Some("~/.npmrc".to_string()),
+            default_profile: Some("default".to_string()),
+            proxy_profile: Some("proxy".to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AppConfig {
     pub default_hosts_file: Option<String>,
     #[serde(default, deserialize_with = "deserialize_no_proxy")]
@@ -75,6 +97,8 @@ pub struct AppConfig {
     pub proxy_settings: ProxySettings,
     #[serde(default)]
     pub shell_integration: ShellIntegration,
+    #[serde(default)]
+    pub npmrc: NpmrcSettings,
 }
 
 #[derive(Deserialize)]
@@ -111,6 +135,7 @@ impl Default for AppConfig {
             wpad_url: Some(defaults::default_wpad_url()),
             proxy_settings: ProxySettings::default(),
             shell_integration: ShellIntegration::default(),
+            npmrc: NpmrcSettings::default(),
         }
     }
 }
@@ -260,6 +285,13 @@ pub fn get_shell_integration() -> Result<ShellIntegration> {
     match load_config() {
         Ok(config) => Ok(config.shell_integration),
         Err(_) => Ok(ShellIntegration::default()),
+    }
+}
+
+pub fn get_npmrc_settings() -> Result<NpmrcSettings> {
+    match load_config() {
+        Ok(config) => Ok(config.npmrc),
+        Err(_) => Ok(NpmrcSettings::default()),
     }
 }
 

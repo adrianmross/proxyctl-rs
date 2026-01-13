@@ -300,19 +300,9 @@ fn test_wpad_url_override_from_config() {
     );
     let _default_guard = EnvGuard::set("DEFAULT_WPAD_URL", "http://default.local/wpad.dat");
 
-    let config_dir = config::get_config_dir().unwrap();
-    fs::write(
-        config_dir.join("config.toml"),
-        r#"wpad_url = "http://override.example.com/wpad.dat"
-
-[proxy_settings]
-enable_http_proxy = true
-enable_https_proxy = true
-enable_ftp_proxy = true
-enable_no_proxy = true
-"#,
-    )
-    .unwrap();
+    let mut config = config::AppConfig::default();
+    config.wpad_url = Some("http://override.example.com/wpad.dat".to_string());
+    config::save_config(&config).unwrap();
 
     let (_, url) = config::get_wpad_config().unwrap();
     assert_eq!(url, "http://override.example.com/wpad.dat");

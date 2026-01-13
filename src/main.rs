@@ -7,6 +7,7 @@ mod db;
 mod defaults;
 mod detect;
 mod doctor;
+mod npmrc;
 mod proxy;
 
 #[derive(Parser)]
@@ -112,6 +113,7 @@ async fn main() -> Result<()> {
         }
         Commands::Off => {
             proxy::disable_proxy().await?;
+            npmrc::restore_default_profile()?;
             config::remove_ssh_hosts()?;
             println!("Proxy disabled and SSH hosts removed");
         }
@@ -122,6 +124,7 @@ async fn main() -> Result<()> {
             }
             ProxyCommands::Off => {
                 proxy::disable_proxy().await?;
+                npmrc::restore_default_profile()?;
                 println!("Proxy disabled");
             }
         },
@@ -174,6 +177,7 @@ async fn main() -> Result<()> {
 async fn configure_proxy(proxy: Option<&str>) -> Result<proxy::ResolvedProxy> {
     let resolved = proxy::resolve_proxy(proxy).await?;
     proxy::set_proxy(&resolved.proxy_url).await?;
+    npmrc::activate_proxy_profile()?;
     Ok(resolved)
 }
 
