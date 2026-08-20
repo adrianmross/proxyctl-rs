@@ -42,7 +42,7 @@ jobs:
       run: cargo clippy -- -D warnings
 
     - name: Run tests
-      run: cargo test --verbose -- -- test-threads=50
+      run: cargo test --verbose -- --test-threads=50
 
     - name: Build release
       run: cargo build --release

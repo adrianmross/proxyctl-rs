@@ -94,14 +94,14 @@ enum StatusCommands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let cli = Cli::parse();
+
     // Load environment variables from .env file if it exists
     let _ = dotenvy::dotenv();
 
     // Initialize config directory and files
     config::initialize_config()?;
     db::init_db(&db::get_db_path()).await?;
-
-    let cli = Cli::parse();
 
     match cli.command {
         Commands::On { proxy } => {

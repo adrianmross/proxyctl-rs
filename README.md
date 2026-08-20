@@ -15,15 +15,21 @@ A Rust CLI tool for managing proxy configurations.
 
 ## Installation
 
-### Pre-built binaries
-
-Download the latest release from [GitHub Releases](https://github.com/adrianmross/proxyctl-rs/releases) for your platform and add it to your PATH.
-
-### One-line install
+### Homebrew
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/adrianmross/proxyctl-rs/main/install.sh | bash
+brew install adrianmross/tap/proxyctl
 ```
+
+This installs `proxyctl` and the underlying `proxyctl-rs` binary.
+
+### Shell installer
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/adrianmross/proxyctl-rs/releases/latest/download/proxyctl-installer.sh | sh
+```
+
+Checksummed platform archives are also available from [GitHub Releases](https://github.com/adrianmross/proxyctl-rs/releases).
 
 ### From source
 
@@ -40,53 +46,53 @@ curl -fsSL https://raw.githubusercontent.com/adrianmross/proxyctl-rs/main/instal
 
 3. Install the binary:
    ```bash
-   sudo cp target/release/proxyctl-rs /usr/local/bin/
+   cargo install --path . --locked
    ```
 
 ## Usage
 
 ```bash
 # Enable proxy and add SSH hosts (auto-detects if no URL provided)
-proxyctl-rs on
+proxyctl on
 
 # Enable proxy with specific URL and add SSH hosts
-proxyctl-rs on --proxy http://proxy.example.com:8080
+proxyctl on --proxy http://proxy.example.com:8080
 
 # Disable proxy and remove SSH hosts
-proxyctl-rs off
+proxyctl off
 
 # Enable proxy only (without touching SSH)
-proxyctl-rs proxy on
+proxyctl proxy on
 
 # Disable proxy only (without touching SSH)
-proxyctl-rs proxy off
+proxyctl proxy off
 
 # Detect best regional proxy
-proxyctl-rs detect
+proxyctl detect
 
 # Add SSH proxy hosts (uses ~/.config/proxyctl-rs/hosts.txt by default)
-proxyctl-rs ssh add
+proxyctl ssh add
 
 # Add SSH proxy hosts from custom file
-proxyctl-rs ssh add --hosts-file /path/to/custom/hosts.txt
+proxyctl ssh add --hosts-file /path/to/custom/hosts.txt
 
 # Remove SSH proxy hosts
-proxyctl-rs ssh remove
+proxyctl ssh remove
 
 # Show combined status
-proxyctl-rs status
+proxyctl status
 
 # Show only proxy status
-proxyctl-rs status proxy
+proxyctl status proxy
 
 # Show only SSH status
-proxyctl-rs status ssh
+proxyctl status ssh
 
 # Run diagnostic checks
-proxyctl-rs doctor run
+proxyctl doctor run
 
 # Inspect configuration values
-proxyctl-rs doctor config
+proxyctl doctor config
 ```
 
 ## Shell Integration
@@ -208,24 +214,20 @@ DEFAULT_WPAD_URL=http://wpad.company.com/wpad.dat
 
 ## Releasing
 
-This project uses [semantic versioning](https://semver.org/). To create a new release:
+This project uses [semantic versioning](https://semver.org/) and
+[cargo-dist](https://opensource.axo.dev/cargo-dist/) for releases.
 
-### Using the release script
+Before a release:
 
 ```bash
-./scripts/release.sh 1.2.3
+cargo test --locked
+dist plan --tag v1.2.3 --allow-dirty
 ```
 
-### Manual process
-
-1. Update the version in `Cargo.toml`
-2. Create a git tag: `git tag v1.2.3`
-3. Push the tag: `git push origin v1.2.3`
-
-GitHub Actions will automatically:
-- Build binaries for multiple platforms (Linux, macOS, Windows)
-- Create a GitHub release with the binaries
-- Publish to crates.io (requires `CRATES_IO_TOKEN` secret to be set in repository settings)
+Update `Cargo.toml`, commit the version, and dispatch the generated GitHub
+release workflow with the exact tag. It publishes checksummed archives and the
+shell/Homebrew installers. crates.io publication remains a separate release
+event and requires the repository secret.
 
 ## Contributing
 
