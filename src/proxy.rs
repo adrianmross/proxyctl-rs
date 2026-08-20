@@ -270,10 +270,16 @@ async fn load_env_state() -> Result<db::EnvState> {
 }
 
 fn resolved_from_value(value: &str) -> Result<ResolvedProxy> {
+    let value = value.trim();
     let host = extract_proxy_host(value)
         .ok_or_else(|| anyhow!("unable to determine proxy host from '{value}'"))?;
+    let proxy_url = if value.contains("://") {
+        value.to_string()
+    } else {
+        format!("http://{value}")
+    };
     Ok(ResolvedProxy {
-        proxy_url: value.to_string(),
+        proxy_url,
         proxy_host: host,
     })
 }
@@ -288,11 +294,8 @@ fn proxy_from_env() -> Option<ResolvedProxy> {
     ];
     for keys in VARS {
         if let Some(value) = get_env_value(keys) {
-            if let Some(host) = extract_proxy_host(&value) {
-                return Some(ResolvedProxy {
-                    proxy_url: value,
-                    proxy_host: host,
-                });
+            if let Ok(resolved) = resolved_from_value(&value) {
+                return Some(resolved);
             }
         }
     }
