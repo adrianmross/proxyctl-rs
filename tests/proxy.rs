@@ -145,6 +145,22 @@ async fn test_resolve_proxy_uses_default_when_wpad_disabled() {
     assert_eq!(resolved.proxy_host, "fallback.example.com:8080");
 }
 
+#[tokio::test]
+async fn test_resolve_proxy_normalizes_host_without_scheme() {
+    let _config_guard = ConfigDirGuard::new();
+
+    let config = config::AppConfig {
+        enable_wpad_discovery: Some(false),
+        default_proxy: Some("fallback.example.com:8080".to_string()),
+        ..config::AppConfig::default()
+    };
+    config::save_config(&config).unwrap();
+
+    let resolved = proxy::resolve_proxy(None).await.unwrap();
+    assert_eq!(resolved.proxy_url, "http://fallback.example.com:8080");
+    assert_eq!(resolved.proxy_host, "fallback.example.com:8080");
+}
+
 #[test]
 fn test_default_constants() {
     // Test that default constants are properly defined

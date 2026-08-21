@@ -646,11 +646,8 @@ fn json_to_toml(value: &JsonValue) -> Option<TomlValue> {
         JsonValue::Array(values) => {
             let mut items = Vec::with_capacity(values.len());
             for value in values {
-                if let Some(converted) = json_to_toml(value) {
-                    items.push(converted);
-                } else {
-                    return None;
-                }
+                let converted = json_to_toml(value)?;
+                items.push(converted);
             }
             Some(TomlValue::Array(items))
         }

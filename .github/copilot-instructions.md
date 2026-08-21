@@ -11,7 +11,7 @@ proxyctl-rs is a Rust command-line tool for managing proxy configurations. It pr
 - `src/config.rs`: Configuration management and XDG config directory handling
 - `src/detect.rs`: Proxy detection and regional server selection
 - `Cargo.toml`: Rust project dependencies and metadata
-- `install.sh`: Installation script for easy deployment
+- cargo-dist-generated shell and Homebrew installers: the supported release install paths
 - `scripts/setup_shell_integration.sh`: Shell integration setup
 - `tests/`: Integration tests
 - `default_hosts.example.txt`: Example proxy hosts configuration
@@ -78,7 +78,7 @@ enable_no_proxy = true
 - Format code with `cargo fmt`
 - Lint with `cargo clippy`
 - Run tests with `cargo test`
-- Build release with `cargo build --release`
+- Build release locally with `cargo build --release --locked`; release artifacts come from cargo-dist
 
 ### Pre-commit Hooks
 Set up pre-commit hooks to enforce code quality:
