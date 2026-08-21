@@ -564,11 +564,7 @@ fn strip_managed_block(content: &str) -> (String, bool) {
     let mut current = content.to_string();
     let mut changed = false;
 
-    loop {
-        let Some(start_idx) = current.find(MANAGED_START) else {
-            break;
-        };
-
+    while let Some(start_idx) = current.find(MANAGED_START) {
         let Some(rel_end) = current[start_idx..].find(MANAGED_END) else {
             break;
         };
