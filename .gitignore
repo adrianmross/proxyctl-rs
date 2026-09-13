@@ -98,7 +98,7 @@ tests/rustdoc-gui/src/**.lock
 test-dashboard/
 
 ## direnv
-/.envrc
+.devenv/
 /.direnv/
 
 ## nix
